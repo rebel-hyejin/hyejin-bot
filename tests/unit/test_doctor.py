@@ -16,7 +16,8 @@ from daeyeon_bot.app.config import (
     SecretsSection,
 )
 from daeyeon_bot.app.doctor import CheckResult, DoctorReport, run_checks
-from daeyeon_bot.infra import storage
+from daeyeon_bot.core.errors import AuthError
+from daeyeon_bot.infra import secrets, storage
 
 
 def _config(state_dir: Path) -> Config:
@@ -110,11 +111,36 @@ async def test_db_ok_when_migrated(fresh_state_dir: Path) -> None:
     assert "schema_version=" in db_result.detail
 
 
-async def test_token_check_reports_provider(fresh_state_dir: Path) -> None:
+class _StubProvider:
+    def load_oauth_token(self) -> str:
+        return "stub-token-12345"
+
+
+async def test_token_check_ok_when_provider_returns_token(
+    fresh_state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _build(**_: object) -> secrets.SecretsProvider:
+        return _StubProvider()
+
+    monkeypatch.setattr(secrets, "build_provider", _build)
     report = await run_checks(_config(fresh_state_dir))
     token = _by_name(report, "token")
-    assert token.status == "warn"  # phase-4 placeholder
+    assert token.status == "ok"
     assert "provider=keychain" in token.detail
+    assert "token len=16" in token.detail
+
+
+async def test_token_check_fail_when_provider_unavailable(
+    fresh_state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _build(**_: object) -> secrets.SecretsProvider:
+        raise AuthError("keychain: no token")
+
+    monkeypatch.setattr(secrets, "build_provider", _build)
+    report = await run_checks(_config(fresh_state_dir))
+    token = _by_name(report, "token")
+    assert token.status == "fail"
+    assert "unavailable" in token.detail
 
 
 async def test_report_ok_property_false_on_fail(fresh_state_dir: Path) -> None:

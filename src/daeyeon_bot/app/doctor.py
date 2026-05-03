@@ -19,7 +19,8 @@ import aiosqlite
 
 from daeyeon_bot.app.config import Config
 from daeyeon_bot.app.heartbeat import DEFAULT_TICK_S, staleness_seconds
-from daeyeon_bot.infra import storage
+from daeyeon_bot.core.errors import AuthError, ConfigError
+from daeyeon_bot.infra import secrets, storage
 
 CheckStatus = Literal["ok", "warn", "fail"]
 DISK_WARN_BYTES = 100 * 1024 * 1024  # 100 MiB
@@ -50,7 +51,7 @@ async def run_checks(config: Config) -> DoctorReport:
         _check_heartbeat(config.state_dir_path / "heartbeat"),
         _check_pause_flag(config.pause_flag_path),
         await _check_db_and_migrations(config.db_path),
-        _check_token_placeholder(config),
+        _check_token(config),
     ]
     return DoctorReport(results=tuple(results))
 
@@ -118,13 +119,28 @@ async def _check_db_and_migrations(db_path: Path) -> CheckResult:
     return CheckResult(name=name, status="ok", detail=f"schema_version={current}")
 
 
-def _check_token_placeholder(config: Config) -> CheckResult:
-    """Phase 4 wires real Keychain/file/env probes; for now, just report the
-    declared provider so the operator can see what would be loaded."""
+def _check_token(config: Config) -> CheckResult:
+    """Probe the configured secrets provider and report success/failure.
+
+    The token itself is never logged — only its length and the provider name.
+    """
+    name = "token"
+    try:
+        provider = secrets.build_provider(
+            name=config.secrets.provider,
+            keychain_service=config.secrets.keychain_service,
+            keychain_account=config.secrets.keychain_account,
+            file_path=config.secrets.file_path,
+        )
+        token = provider.load_oauth_token()
+    except ConfigError as exc:
+        return CheckResult(name=name, status="fail", detail=f"config: {exc}")
+    except AuthError as exc:
+        return CheckResult(name=name, status="fail", detail=f"unavailable: {exc}")
     return CheckResult(
-        name="token",
-        status="warn",
-        detail=f"provider={config.secrets.provider} (live probe lands in Phase 4)",
+        name=name,
+        status="ok",
+        detail=f"provider={config.secrets.provider} (token len={len(token)})",
     )
 
 

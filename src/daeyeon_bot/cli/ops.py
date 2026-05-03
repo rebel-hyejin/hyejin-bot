@@ -1,0 +1,36 @@
+"""Ops commands: doctor / migrate / replay / prune."""
+
+from __future__ import annotations
+
+import typer
+
+app = typer.Typer(
+    help="Operations: pre-flight checks, schema migrations, replay, prune.", no_args_is_help=True
+)
+
+
+@app.command(
+    "doctor",
+    help="Run pre-flight checks: token, DB, config, pending migrations, disk, heartbeat staleness.",
+)
+def doctor() -> None:
+    raise NotImplementedError("Phase 3: implement doctor checks per docs/PLAN.md §5 Phase 3")
+
+
+@app.command("migrate", help="Apply pending SQLite schema migrations under a transaction.")
+def migrate() -> None:
+    raise NotImplementedError("Phase 1: scan infra/db/migrations and bump meta.schema_version")
+
+
+@app.command("replay", help="Re-emit a dead-lettered or processed event (attempt_epoch++).")
+def replay(
+    event_id: str,
+    handler: str | None = typer.Option(None, "--handler", help="Replay only this handler."),
+    confirm: bool = typer.Option(False, "--confirm", help="Required to actually re-emit."),
+) -> None:
+    raise NotImplementedError("Phase 3: dry-run by default, --confirm to bump attempt_epoch")
+
+
+@app.command("prune", help="Apply retention: events 90d, runs 30d, dedup expired, last 5 backups.")
+def prune() -> None:
+    raise NotImplementedError("Phase 6: enforce retention policy from config")

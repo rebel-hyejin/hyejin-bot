@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import typer
+
+from daeyeon_bot.app.lifecycle import BootOptions, boot
 
 app = typer.Typer(help="Lifecycle controls: pause, resume, stop.", no_args_is_help=True)
 
 
-def run() -> None:
-    """Start the daemon. Phase 0 stub — returns NotImplementedError to make doctor honest."""
-    raise NotImplementedError("Phase 1: implement lifecycle.boot() + signal-driven shutdown loop.")
+def run(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    """Start the daemon (foreground). Use launchd / systemd in production."""
+    asyncio.run(boot(BootOptions(config_path=config)))
 
 
 @app.command("pause", help="Create the PAUSE flag; running handlers continue, new ones block.")

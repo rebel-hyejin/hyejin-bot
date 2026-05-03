@@ -36,7 +36,7 @@ app.add_typer(dev_app, name="dev")
 
 
 @app.callback(invoke_without_command=True)
-def _root(
+def root(
     ctx: typer.Context,
     version: bool = typer.Option(
         False,

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import typer
+
+from daeyeon_bot.app.config import load
+from daeyeon_bot.infra import storage
 
 app = typer.Typer(
     help="Operations: pre-flight checks, schema migrations, replay, prune.", no_args_is_help=True
@@ -18,8 +23,18 @@ def doctor() -> None:
 
 
 @app.command("migrate", help="Apply pending SQLite schema migrations under a transaction.")
-def migrate() -> None:
-    raise NotImplementedError("Phase 1: scan infra/db/migrations and bump meta.schema_version")
+def migrate(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    asyncio.run(_migrate(config_path=config))
+
+
+async def _migrate(*, config_path: str | None) -> None:
+    cfg = load(config_path)
+    cfg.state_dir_path.mkdir(parents=True, exist_ok=True)
+    async with storage.connection(cfg.db_path) as conn:
+        version = await storage.apply_migrations(conn)
+    typer.echo(f"schema_version={version}")
 
 
 @app.command("replay", help="Re-emit a dead-lettered or processed event (attempt_epoch++).")

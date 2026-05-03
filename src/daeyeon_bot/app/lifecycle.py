@@ -27,11 +27,13 @@ import contextlib
 import signal
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import aiosqlite
 import structlog
 
-from daeyeon_bot.app.config import load
+from daeyeon_bot.app import heartbeat, pause
+from daeyeon_bot.app.config import Config, load
 from daeyeon_bot.app.container import Container, ContainerOverrides, build
 from daeyeon_bot.app.dispatcher import Dispatcher
 from daeyeon_bot.app.lock import AlreadyRunningError, PidLock
@@ -62,9 +64,8 @@ async def boot(options: BootOptions | None = None) -> None:
     """
     options = options or BootOptions()
 
-    # 1. config
+    # 1. config; 2. logging
     config = load(options.config_path)
-    # 2. logging
     bot_logging.init(level=config.logging.level, fmt=config.logging.format)
     _log.info("boot.start", state_dir=str(config.state_dir_path))
 
@@ -77,76 +78,79 @@ async def boot(options: BootOptions | None = None) -> None:
         db = await storage.open_db(config.db_path)
         try:
             await storage.apply_migrations(db)
-
-            # 5. secrets — Phase 4.
-            # 6. permissions — Phase 4.
-            # 7. container
-            container = build(config, db, overrides=options.overrides)
-            # 8. heartbeat — Phase 3.
-
-            # Recover any rows that the previous process left in 'running' or
-            # 'interrupted' state. Must run before the dispatcher starts polling.
-            clock = container.clock
-            registry = container.handlers
-            idempotent = {name for name, rec in registry.by_name.items() if rec.manifest.idempotent}
-            known = set(registry.by_name)
-            report = await outbox.recover_interrupted_rows(
-                db,
-                idempotent_handlers=idempotent,
-                known_handlers=known,
-                now=clock.now(),
-            )
-            if report.crashed or report.rerun or report.dead_lettered:
-                _log.info(
-                    "boot.recovery",
-                    crashed=report.crashed,
-                    rerun=report.rerun,
-                    dead_lettered=report.dead_lettered,
-                )
-
-            # 9. dispatcher
-            dispatcher = Dispatcher(
-                db=container.db,
-                handlers=container.handlers,
-                claude_session_factory=container.claude_session_factory,
-                clock=clock,
-            )
-
-            # 11. signal-driven shutdown
-            loop = asyncio.get_running_loop()
-            stop_event = options.external_stop_event or asyncio.Event()
-            cleanup = (
-                _install_signal_handlers(loop, stop_event)
-                if options.install_signal_handlers
-                else None
-            )
-
-            async def watch_signals() -> None:
-                await stop_event.wait()
-                _log.info("shutdown.phase_a", reason="signal")
-                dispatcher.request_stop_claiming()
-
-            async def driver() -> None:
-                try:
-                    await _drive_dispatcher(dispatcher, db, clock)
-                finally:
-                    # Wake watch_signals if the dispatcher self-stopped
-                    # (e.g., AuthError) so the TaskGroup can exit cleanly.
-                    stop_event.set()
-
-            try:
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(driver())
-                    tg.create_task(watch_signals())
-            finally:
-                if cleanup is not None:
-                    cleanup()
+            # 5-6. secrets / permissions — Phase 4.
+            # 7. container, 8. heartbeat, 9. dispatcher, 11. signals
+            await _run_supervised(config, db, options)
         finally:
             await _wal_checkpoint(db)
             await db.close()
             _log.info("boot.exit")
     finally:
         pid_lock.close()
+
+
+async def _run_supervised(config: Config, db: aiosqlite.Connection, options: BootOptions) -> None:
+    """Build the container, recover, then run dispatcher + heartbeat under TaskGroup."""
+    container = build(config, db, overrides=options.overrides)
+    clock = container.clock
+    await _recover_outbox(db, container, clock)
+
+    dispatcher = Dispatcher(
+        db=container.db,
+        handlers=container.handlers,
+        claude_session_factory=container.claude_session_factory,
+        clock=clock,
+        is_paused=lambda: pause.is_paused(config.pause_flag_path),
+    )
+
+    loop = asyncio.get_running_loop()
+    stop_event = options.external_stop_event or asyncio.Event()
+    cleanup = (
+        _install_signal_handlers(loop, stop_event) if options.install_signal_handlers else None
+    )
+
+    async def watch_signals() -> None:
+        await stop_event.wait()
+        _log.info("shutdown.phase_a", reason="signal")
+        dispatcher.request_stop_claiming()
+
+    async def driver() -> None:
+        try:
+            await _drive_dispatcher(dispatcher, db, clock)
+        finally:
+            # Wake watch_signals if the dispatcher self-stopped
+            # (e.g., AuthError) so the TaskGroup can exit cleanly.
+            stop_event.set()
+
+    heartbeat_path = _heartbeat_path(config)
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(driver())
+            tg.create_task(watch_signals())
+            tg.create_task(heartbeat.run_until_stopped(heartbeat_path, stop_event))
+    finally:
+        if cleanup is not None:
+            cleanup()
+
+
+async def _recover_outbox(db: aiosqlite.Connection, container: Container, clock: Clock) -> None:
+    """Run outbox recovery before dispatcher polls — see PLAN §2.3 step 4."""
+    registry = container.handlers
+    idempotent = {name for name, rec in registry.by_name.items() if rec.manifest.idempotent}
+    known = set(registry.by_name)
+    report = await outbox.recover_interrupted_rows(
+        db,
+        idempotent_handlers=idempotent,
+        known_handlers=known,
+        now=clock.now(),
+    )
+    if report.crashed or report.rerun or report.dead_lettered:
+        _log.info(
+            "boot.recovery",
+            crashed=report.crashed,
+            rerun=report.rerun,
+            dead_lettered=report.dead_lettered,
+        )
 
 
 async def _drive_dispatcher(dispatcher: Dispatcher, db: aiosqlite.Connection, clock: Clock) -> None:
@@ -162,6 +166,10 @@ async def _drive_dispatcher(dispatcher: Dispatcher, db: aiosqlite.Connection, cl
             reason="shutdown drain timeout",
         )
         _log.warning("shutdown.drain_timeout", timed_out=len(timed_out), interrupted=marked)
+
+
+def _heartbeat_path(config: Config) -> Path:
+    return config.state_dir_path / "heartbeat"
 
 
 async def _wal_checkpoint(db: aiosqlite.Connection) -> None:

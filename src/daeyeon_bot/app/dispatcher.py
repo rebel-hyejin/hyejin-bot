@@ -14,6 +14,7 @@ Lifecycle:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import cast
@@ -58,6 +59,9 @@ class Dispatcher:
     clock: Clock = field(default_factory=SystemClock)
     poll_interval_s: float = 0.5
     claim_id: str = "dispatcher-1"
+    # Returns True when the operator wants new dispatches blocked (PAUSE flag).
+    # In-flight handlers keep running; the loop just stops claiming.
+    is_paused: Callable[[], bool] = field(default=lambda: False)
     _stop: asyncio.Event = field(default_factory=asyncio.Event)
     _stop_claim: asyncio.Event = field(default_factory=asyncio.Event)
     _semaphores: dict[str, asyncio.Semaphore] = field(default_factory=dict[str, asyncio.Semaphore])
@@ -68,6 +72,9 @@ class Dispatcher:
         """Poll until `request_stop_claiming()` or `stop()`. Returns immediately
         once Phase A is requested — the caller is responsible for `drain()`."""
         while not self._is_done():
+            if self.is_paused():
+                await self._wait_for_stop_or_tick()
+                continue
             job = await outbox.claim_one(self.db, claimed_by=self.claim_id, now=self.clock.now())
             if job is None:
                 await self._wait_for_stop_or_tick()

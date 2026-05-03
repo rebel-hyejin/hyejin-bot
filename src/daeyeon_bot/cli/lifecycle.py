@@ -8,6 +8,7 @@ import signal
 
 import typer
 
+from daeyeon_bot.app import pause as pause_mod
 from daeyeon_bot.app.config import load
 from daeyeon_bot.app.lifecycle import AlreadyRunningError, BootOptions, boot
 
@@ -27,13 +28,28 @@ def run(
 
 
 @app.command("pause", help="Create the PAUSE flag; running handlers continue, new ones block.")
-def pause() -> None:
-    raise NotImplementedError("Phase 3: touch PAUSE file in state_dir")
+def pause(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    cfg = load(config)
+    cfg.state_dir_path.mkdir(parents=True, exist_ok=True)
+    created = pause_mod.pause(cfg.pause_flag_path)
+    if created:
+        typer.echo(f"paused: {cfg.pause_flag_path}")
+    else:
+        typer.echo(f"already paused: {cfg.pause_flag_path}")
 
 
 @app.command("resume", help="Remove the PAUSE flag; new handlers may proceed.")
-def resume() -> None:
-    raise NotImplementedError("Phase 3: unlink PAUSE file in state_dir")
+def resume(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    cfg = load(config)
+    removed = pause_mod.resume(cfg.pause_flag_path)
+    if removed:
+        typer.echo(f"resumed: removed {cfg.pause_flag_path}")
+    else:
+        typer.echo(f"not paused: {cfg.pause_flag_path} did not exist")
 
 
 @app.command("stop", help="Send SIGTERM to the running daemon (pidfile lookup).")

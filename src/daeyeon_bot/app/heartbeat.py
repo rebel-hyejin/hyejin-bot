@@ -1,7 +1,93 @@
-"""Heartbeat task: 30s file touch + sd_notify (systemd). Phase 0 stub."""
+"""Heartbeat loop: touch a file every `tick_s` seconds, optionally sd_notify.
+
+PLAN.md §2.3 step 8. The lifecycle starts `run_until_stopped()` as a TaskGroup
+member and stops it via the same stop_event used for shutdown.
+
+A stale heartbeat (mtime older than ~3x tick) is the signal supervisors and
+`ops doctor` use to detect a hung daemon. We deliberately do not log on every
+tick to keep the structlog stream useful.
+"""
 
 from __future__ import annotations
 
+import asyncio
+import os
+import socket
+from pathlib import Path
 
-async def run() -> None:
-    raise NotImplementedError("Phase 3: 30s tick — touch file + sd_notify(WATCHDOG=1)")
+import structlog
+
+_log = structlog.get_logger(__name__)
+
+DEFAULT_TICK_S = 30.0
+STALE_FACTOR = 3  # heartbeat older than tick * factor → treated as stale by doctor
+
+
+async def run_until_stopped(
+    flag_path: Path, stop_event: asyncio.Event, *, tick_s: float = DEFAULT_TICK_S
+) -> None:
+    """Touch `flag_path` every `tick_s` until `stop_event` is set."""
+    flag_path.parent.mkdir(parents=True, exist_ok=True)
+    _touch(flag_path)
+    _sd_notify_ready()
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=tick_s)
+        except TimeoutError:
+            _touch(flag_path)
+            _sd_notify_watchdog()
+
+
+def staleness_seconds(flag_path: Path, *, now_ts: float) -> float | None:
+    """Seconds since the heartbeat was last touched, or None if missing."""
+    try:
+        mtime = flag_path.stat().st_mtime
+    except FileNotFoundError:
+        return None
+    return now_ts - mtime
+
+
+def is_stale(flag_path: Path, *, now_ts: float, tick_s: float = DEFAULT_TICK_S) -> bool:
+    """True iff the heartbeat file is missing or older than tick_s * STALE_FACTOR."""
+    age = staleness_seconds(flag_path, now_ts=now_ts)
+    if age is None:
+        return True
+    return age > tick_s * STALE_FACTOR
+
+
+def _touch(flag_path: Path) -> None:
+    flag_path.touch(mode=0o600)
+
+
+def _sd_notify_ready() -> None:
+    _send_sd_notify("READY=1")
+
+
+def _sd_notify_watchdog() -> None:
+    _send_sd_notify("WATCHDOG=1")
+
+
+def _send_sd_notify(message: str) -> None:
+    """Best-effort sd_notify. No-op outside systemd's notify socket.
+
+    We avoid pulling in `systemd` libs; the protocol is a one-line UDP send.
+    """
+    socket_path = os.environ.get("NOTIFY_SOCKET")
+    if not socket_path:
+        return
+    try:
+        # Abstract namespace sockets begin with NUL on Linux.
+        addr = "\0" + socket_path[1:] if socket_path.startswith("@") else socket_path
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+            sock.sendto(message.encode("utf-8"), addr)
+    except OSError as exc:
+        _log.debug("heartbeat.sd_notify_failed", error=str(exc), message=message)
+
+
+__all__ = [
+    "DEFAULT_TICK_S",
+    "STALE_FACTOR",
+    "is_stale",
+    "run_until_stopped",
+    "staleness_seconds",
+]

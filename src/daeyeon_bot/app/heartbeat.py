@@ -5,7 +5,9 @@ member and stops it via the same stop_event used for shutdown.
 
 A stale heartbeat (mtime older than ~3x tick) is the signal supervisors and
 `ops doctor` use to detect a hung daemon. We deliberately do not log on every
-tick to keep the structlog stream useful.
+tick to keep the structlog stream useful — but if a tick wakes up much later
+than scheduled (event loop blocked, system paused, GC stall, …) we *do* log
+an error so journald / launchd-stderr surfaces the regression in real time.
 """
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import structlog
@@ -24,18 +28,38 @@ STALE_FACTOR = 3  # heartbeat older than tick * factor → treated as stale by d
 
 
 async def run_until_stopped(
-    flag_path: Path, stop_event: asyncio.Event, *, tick_s: float = DEFAULT_TICK_S
+    flag_path: Path,
+    stop_event: asyncio.Event,
+    *,
+    tick_s: float = DEFAULT_TICK_S,
+    clock: Callable[[], float] = time.monotonic,
 ) -> None:
-    """Touch `flag_path` every `tick_s` until `stop_event` is set."""
+    """Touch `flag_path` every `tick_s` until `stop_event` is set.
+
+    If a tick wakes up later than `tick_s * STALE_FACTOR`, log an error
+    once for that tick — the daemon is otherwise blind to a self-stall.
+    """
     flag_path.parent.mkdir(parents=True, exist_ok=True)
     _touch(flag_path)
     _sd_notify_ready()
+    stale_threshold_s = tick_s * STALE_FACTOR
+    last_tick_ts = clock()
     while not stop_event.is_set():
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=tick_s)
         except TimeoutError:
+            now_ts = clock()
+            elapsed_s = now_ts - last_tick_ts
+            if elapsed_s > stale_threshold_s:
+                _log.error(
+                    "heartbeat.tick_lag",
+                    elapsed_s=round(elapsed_s, 3),
+                    tick_s=tick_s,
+                    threshold_s=stale_threshold_s,
+                )
             _touch(flag_path)
             _sd_notify_watchdog()
+            last_tick_ts = now_ts
 
 
 def staleness_seconds(flag_path: Path, *, now_ts: float) -> float | None:

@@ -25,12 +25,18 @@ def now() -> datetime:
     return datetime(2026, 5, 3, 12, 0, 0, tzinfo=UTC)
 
 
-def _config(tmp_path: Path, *, runs_days: int = 30, keep: int = 10) -> Config:
+def _config(
+    tmp_path: Path, *, runs_days: int = 30, keep: int = 10, events_days: int = 90
+) -> Config:
     return Config(
         runtime=RuntimeSection(state_dir=str(tmp_path)),
         logging=LoggingSection(),
         secrets=SecretsSection(),
-        retention=RetentionSection(runs_days=runs_days, runs_keep_per_handler=keep),
+        retention=RetentionSection(
+            runs_days=runs_days,
+            runs_keep_per_handler=keep,
+            events_days=events_days,
+        ),
         triggers={},
         handlers={"echo": HandlerEntry(enabled=True)},
         routing={},
@@ -53,15 +59,21 @@ async def _insert_event(conn: aiosqlite.Connection, *, event_id: str, now: datet
     )
 
 
-async def _insert_outbox(conn: aiosqlite.Connection, *, event_id: str, handler: str) -> int:
+async def _insert_outbox(
+    conn: aiosqlite.Connection,
+    *,
+    event_id: str,
+    handler: str,
+    status: str = "pending",
+) -> int:
     cur = await conn.execute(
         """
         INSERT INTO outbox(event_id, handler, status, attempt, attempt_epoch,
                            created_at, updated_at)
-        VALUES (?, ?, 'pending', 0, 0,
+        VALUES (?, ?, ?, 0, 0,
                 '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
         """,
-        (event_id, handler),
+        (event_id, handler, status),
     )
     assert cur.lastrowid is not None
     return cur.lastrowid
@@ -168,5 +180,56 @@ async def test_prune_idempotent(tmp_path: Path, now: datetime) -> None:
         second = await prune(conn, config=_config(tmp_path), now=now)
         assert first.dedup_keys_deleted == 1
         assert second.dedup_keys_deleted == 0
+    finally:
+        await conn.close()
+
+
+async def test_prune_events_drops_settled_old_events(tmp_path: Path, now: datetime) -> None:
+    conn = await _open(tmp_path / "state.db")
+    try:
+        await _insert_event(conn, event_id="old", now=now - timedelta(days=120))
+        await _insert_outbox(conn, event_id="old", handler="echo", status="acked")
+        await _insert_event(conn, event_id="recent", now=now - timedelta(days=10))
+        await _insert_outbox(conn, event_id="recent", handler="echo", status="acked")
+        await conn.commit()
+
+        report = await prune(conn, config=_config(tmp_path, events_days=90), now=now)
+        assert report.events_deleted == 1
+        assert report.outbox_deleted == 1
+
+        async with conn.execute("SELECT id FROM events ORDER BY id") as cur:
+            rows = await cur.fetchall()
+        ids = {row["id"] for row in rows}
+        assert ids == {"recent"}
+    finally:
+        await conn.close()
+
+
+async def test_prune_events_skips_active_outbox(tmp_path: Path, now: datetime) -> None:
+    conn = await _open(tmp_path / "state.db")
+    try:
+        await _insert_event(conn, event_id="old-pending", now=now - timedelta(days=120))
+        await _insert_outbox(conn, event_id="old-pending", handler="echo", status="pending")
+        await _insert_event(conn, event_id="old-retry", now=now - timedelta(days=120))
+        await _insert_outbox(conn, event_id="old-retry", handler="echo", status="retry")
+        await conn.commit()
+
+        report = await prune(conn, config=_config(tmp_path, events_days=90), now=now)
+        assert report.events_deleted == 0
+        assert report.outbox_deleted == 0
+    finally:
+        await conn.close()
+
+
+async def test_prune_events_handles_no_outbox_rows(tmp_path: Path, now: datetime) -> None:
+    conn = await _open(tmp_path / "state.db")
+    try:
+        # Old event with no outbox rows at all (e.g., no handler routed it).
+        await _insert_event(conn, event_id="orphan", now=now - timedelta(days=120))
+        await conn.commit()
+
+        report = await prune(conn, config=_config(tmp_path, events_days=90), now=now)
+        assert report.events_deleted == 1
+        assert report.outbox_deleted == 0
     finally:
         await conn.close()

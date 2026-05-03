@@ -1,4 +1,4 @@
-"""Ops commands: doctor / migrate / replay / prune."""
+"""Ops commands: doctor / migrate / replay / prune / backup."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import typer
 
+from daeyeon_bot.app.backup import BackupReport, run_backup
 from daeyeon_bot.app.config import load
 from daeyeon_bot.app.doctor import DoctorReport, run_checks
 from daeyeon_bot.app.prune import PruneReport
@@ -16,7 +17,8 @@ from daeyeon_bot.app.replay import replay as run_replay
 from daeyeon_bot.infra import storage
 
 app = typer.Typer(
-    help="Operations: pre-flight checks, schema migrations, replay, prune.", no_args_is_help=True
+    help="Operations: pre-flight checks, schema migrations, replay, prune, backup.",
+    no_args_is_help=True,
 )
 
 
@@ -107,7 +109,10 @@ def prune(
 ) -> None:
     report = asyncio.run(_prune(config_path=config))
     typer.echo(
-        f"runs deleted: {report.runs_deleted}  dedup_keys deleted: {report.dedup_keys_deleted}"
+        f"runs deleted: {report.runs_deleted}  "
+        f"dedup_keys deleted: {report.dedup_keys_deleted}  "
+        f"events deleted: {report.events_deleted}  "
+        f"outbox deleted: {report.outbox_deleted}"
     )
 
 
@@ -115,3 +120,23 @@ async def _prune(*, config_path: str | None) -> PruneReport:
     cfg = load(config_path)
     async with storage.connection(cfg.db_path) as conn:
         return await run_prune(conn, config=cfg, now=datetime.now(tz=UTC))
+
+
+@app.command("backup", help="Hot SQLite snapshot under <state_dir>/backups; prunes to backup_keep.")
+def backup(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    report = asyncio.run(_backup(config_path=config))
+    typer.echo(f"snapshot: {report.snapshot_path}")
+    if report.pruned:
+        typer.echo(f"pruned {len(report.pruned)} old backup(s)")
+
+
+async def _backup(*, config_path: str | None) -> BackupReport:
+    cfg = load(config_path)
+    return await run_backup(
+        db_path=cfg.db_path,
+        state_dir=cfg.state_dir_path,
+        keep=cfg.retention.backup_keep,
+        now=datetime.now(tz=UTC),
+    )

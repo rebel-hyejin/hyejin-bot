@@ -52,6 +52,9 @@ status:
 prune:
     uv run daeyeon-bot ops prune
 
+backup:
+    uv run daeyeon-bot ops backup
+
 migrate:
     uv run daeyeon-bot ops migrate
 

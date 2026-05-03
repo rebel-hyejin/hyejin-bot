@@ -39,7 +39,7 @@ from daeyeon_bot.app.dispatcher import Dispatcher
 from daeyeon_bot.app.lock import AlreadyRunningError, PidLock
 from daeyeon_bot.core.time import Clock
 from daeyeon_bot.infra import logging as bot_logging
-from daeyeon_bot.infra import outbox, storage
+from daeyeon_bot.infra import outbox, secrets, storage
 
 _log = structlog.get_logger(__name__)
 
@@ -51,6 +51,7 @@ class BootOptions:
     config_path: str | None = None
     overrides: ContainerOverrides | None = None
     install_signal_handlers: bool = True
+    insecure_env_allowed: bool = False
     # Tests can inject an event that, once set, triggers Phase A like a SIGTERM.
     # When None, boot creates its own internal Event.
     external_stop_event: asyncio.Event | None = None
@@ -78,9 +79,12 @@ async def boot(options: BootOptions | None = None) -> None:
         db = await storage.open_db(config.db_path)
         try:
             await storage.apply_migrations(db)
-            # 5-6. secrets / permissions — Phase 4.
+            # 5. secrets — fail fast so launchd/systemd surfaces exit 78.
+            #    When tests inject a fake claude session factory, skip the
+            #    real token probe (no SDK subprocess will spawn).
+            oauth_token = _maybe_load_oauth_token(config, options)
             # 7. container, 8. heartbeat, 9. dispatcher, 11. signals
-            await _run_supervised(config, db, options)
+            await _run_supervised(config, db, options, oauth_token=oauth_token)
         finally:
             await _wal_checkpoint(db)
             await db.close()
@@ -89,9 +93,33 @@ async def boot(options: BootOptions | None = None) -> None:
         pid_lock.close()
 
 
-async def _run_supervised(config: Config, db: aiosqlite.Connection, options: BootOptions) -> None:
+def _maybe_load_oauth_token(config: Config, options: BootOptions) -> str | None:
+    """Boot-time secrets probe (PLAN §2.3 step 5). AuthError → exit 78.
+
+    Returns None when a test override already supplies the claude session
+    factory — the real CLI subprocess won't spawn so the token is unused.
+    """
+    if options.overrides is not None and options.overrides.claude_session_factory is not None:
+        return None
+    provider = secrets.build_provider(
+        name=config.secrets.provider,
+        keychain_service=config.secrets.keychain_service,
+        keychain_account=config.secrets.keychain_account,
+        file_path=config.secrets.file_path,
+        insecure_env_allowed=options.insecure_env_allowed,
+    )
+    return provider.load_oauth_token()
+
+
+async def _run_supervised(
+    config: Config,
+    db: aiosqlite.Connection,
+    options: BootOptions,
+    *,
+    oauth_token: str | None,
+) -> None:
     """Build the container, recover, then run dispatcher + heartbeat under TaskGroup."""
-    container = build(config, db, overrides=options.overrides)
+    container = build(config, db, oauth_token=oauth_token, overrides=options.overrides)
     clock = container.clock
     await _recover_outbox(db, container, clock)
 

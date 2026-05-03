@@ -11,20 +11,30 @@ import typer
 from daeyeon_bot.app import pause as pause_mod
 from daeyeon_bot.app.config import load
 from daeyeon_bot.app.lifecycle import AlreadyRunningError, BootOptions, boot
+from daeyeon_bot.core.errors import AuthError, ConfigError
 
 app = typer.Typer(help="Lifecycle controls: pause, resume, stop.", no_args_is_help=True)
 
 
 def run(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+    insecure_env: bool = typer.Option(
+        False,
+        "--insecure-env",
+        help="Allow secrets.provider='env' (token visible in /proc on Linux).",
+    ),
 ) -> None:
     """Start the daemon (foreground). Use launchd / systemd in production."""
     try:
-        asyncio.run(boot(BootOptions(config_path=config)))
+        asyncio.run(boot(BootOptions(config_path=config, insecure_env_allowed=insecure_env)))
     except AlreadyRunningError as exc:
         typer.echo(f"daeyeon-bot: {exc}", err=True)
         # 75 = EX_TEMPFAIL — supervisor (launchd/systemd) should retry later.
         raise typer.Exit(code=75) from exc
+    except (AuthError, ConfigError) as exc:
+        typer.echo(f"daeyeon-bot: {type(exc).__name__}: {exc}", err=True)
+        # 78 = EX_CONFIG — operator must rotate the token / fix config.
+        raise typer.Exit(code=78) from exc
 
 
 @app.command("pause", help="Create the PAUSE flag; running handlers continue, new ones block.")

@@ -1,13 +1,23 @@
-"""Echo handler — calls Claude with the event payload's `message`, returns Ack.
+"""Echo handler — calls Claude with `payload.message`, returns Ack.
 
-Phase 0: defines MANIFEST. Body lands in Phase 1 against the fake ClaudeSession.
+Phase 1: validates the payload, opens a ClaudeSession from the context's factory,
+queries Claude, logs the response. Settle (in dispatcher) records status=acked.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 
+import structlog
+
+from daeyeon_bot.core.errors import ValidationError
+from daeyeon_bot.core.events import Event
 from daeyeon_bot.core.manifest import HandlerManifest
+from daeyeon_bot.core.protocols import HandlerContext
+from daeyeon_bot.core.results import Ack, HandlerResult
+
+_log = structlog.get_logger(__name__)
 
 MANIFEST = HandlerManifest(
     name="echo",
@@ -19,10 +29,23 @@ MANIFEST = HandlerManifest(
 )
 
 
+@dataclass(slots=True)
 class EchoHandler:
-    """Phase 1 implementation."""
+    manifest: HandlerManifest
 
-    manifest = MANIFEST
+    async def handle(self, event: Event, ctx: HandlerContext) -> HandlerResult:
+        message = event.payload.get("message")
+        if not isinstance(message, str) or not message:
+            raise ValidationError("echo expects payload.message: non-empty str")
 
-    async def handle(self, event, ctx):
-        raise NotImplementedError("Phase 1: open ClaudeSession and Ack")
+        session = ctx.claude_session_factory()
+        async with session as s:  # type: ignore[attr-defined]
+            response = await s.query(message)  # type: ignore[attr-defined]
+
+        _log.info(
+            "echo.acked",
+            event_id=event.id,
+            trace_id=ctx.trace_id,
+            response_preview=response[:80],
+        )
+        return Ack()

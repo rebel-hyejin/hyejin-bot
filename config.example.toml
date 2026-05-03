@@ -1,0 +1,65 @@
+# daeyeon-bot — example configuration.
+#
+# Copy to `config.toml` (gitignored) and edit. The path can be overridden with
+# DAEYEON_BOT_CONFIG. All keys here are also overridable via env using the
+# `DAEYEON_BOT__SECTION__KEY` pattern (double underscore as section separator).
+
+[runtime]
+# Where state.db, PAUSE flag, heartbeat file, and *.bak backups live.
+# Tilde is expanded at load time.
+state_dir = "~/.daeyeon-bot"
+# 2-phase shutdown total budget (seconds). Phase A drain + Phase B finalize.
+shutdown_budget_seconds = 180
+
+[logging]
+level = "INFO"        # DEBUG | INFO | WARNING | ERROR
+format = "json"       # "json" for production, "console" for dev tail
+
+[retention]
+events_days = 90
+runs_days = 30
+runs_keep_per_handler = 10
+dedup_default_ttl_days = 7
+backup_keep = 5
+
+[ratelimit.defaults]
+global_per_hour = 30
+global_per_day = 200
+handler_per_hour = 10
+
+[secrets]
+# Provider for the Claude OAuth token.
+#   "keychain" — macOS Keychain (default for Mac).
+#   "file"     — 0600 file at `file_path` (default for Linux server).
+#   "env"      — read CLAUDE_CODE_OAUTH_TOKEN from environment. **DEV ONLY**;
+#                daemon requires `--insecure-env` flag to use this.
+provider = "keychain"
+keychain_service = "daeyeon-bot"
+keychain_account = "oauth_token"
+file_path = "/etc/daeyeon-bot/oauth_token"
+
+[claude]
+model = "claude-opus-4-7"
+default_system_prompt = "You are daeyeon's helpful assistant."
+
+# ─── Triggers ──────────────────────────────────────────────────────────────────
+# A trigger is enabled if its section exists with `enabled = true`.
+
+[triggers.manual]
+enabled = true
+
+# ─── Handlers ──────────────────────────────────────────────────────────────────
+# Manifest fields here override the handler's compile-time defaults.
+
+[handlers.echo]
+enabled = true
+idempotent = true
+dedup_ttl_seconds = 86400
+concurrency = 1
+accepts = ["manual.message"]
+
+# ─── Routing ───────────────────────────────────────────────────────────────────
+# event.type → list of handler names. A type with no entry is dropped (logged).
+
+[routing]
+"manual.message" = ["echo"]

@@ -90,4 +90,4 @@ Unclassified exceptions are treated as `PermanentError`.
 
 ---
 
-*Last updated: 2026-05-03 (Phase 0 scaffolding).*
+*Last updated: 2026-05-04 (Phases 0–6 implemented; contracts stable).*

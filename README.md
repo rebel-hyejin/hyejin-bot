@@ -1,79 +1,185 @@
 # daeyeon-bot
 
-> Personal Claude bot daemon for daeyeon.lee@rebellions.ai. Runs 24/7 on
-> macOS (launchd) or a Linux server (systemd --user), wakes up on triggers
-> (manual / cron / webhook / file watch / Slack), and dispatches each event
-> to a handler that calls Claude on the operator's Pro/Max OAuth subscription.
-> **Not a SaaS, not multi-tenant, not for anyone else.**
+> Personal Claude bot **daemon** for one operator (daeyeon.lee@rebellions.ai).
+> Runs 24/7 on macOS (launchd) or a Linux server (systemd --user), wakes up
+> on triggers, dispatches each event to a handler, and calls Claude on the
+> operator's Pro/Max OAuth subscription. **Single-tenant, single-process,
+> single-host.** Not a SaaS, not for anyone else.
 
 ## Status
 
 Phases 0–6 implemented (vertical slice → reliability → operability → real
-SDK + secrets → deployment → hardening). See `docs/PLAN.md` for the design
-and `docs/RUNBOOK.md` for operations.
+SDK + secrets → deployment → hardening). The infrastructure is complete;
+the only built-in trigger is `manual` and the only built-in handler is
+`echo`. Real triggers and handlers are added one at a time.
+
+| Doc | Purpose |
+|---|---|
+| `docs/PLAN.md`  | Full design — architecture, phased plan, schemas. |
+| `CONTRACTS.md`  | Stable interfaces (delivery semantics, HandlerResult, manifests). |
+| `CLAUDE.md`     | Code-level guardrails for editors (humans + AI). |
+| `docs/RUNBOOK.md` | Routine ops, Mac/Linux parity, incident playbooks. |
+
+---
+
+## Mental model — one event, end to end
+
+```
+ ┌──────────┐   emit_one()    ┌────────────┐  claim_one()   ┌────────────┐
+ │ trigger  │ ──────────────▶ │   outbox   │ ─────────────▶ │ dispatcher │
+ │  manual  │   Event row →   │  (SQLite)  │  ← row marked  │  poll loop │
+ │  cron …  │                 │  WAL mode  │     running    │            │
+ └──────────┘                 └────────────┘                └─────┬──────┘
+                                                                  │ HandlerResult
+                                                                  ▼
+                                  ┌─────────────────┐      ┌──────────────┐
+                                  │ outbox.settle() │ ◀──  │   handler    │
+                                  │ acked / retry / │      │  (echo, …)   │
+                                  │  dead_letter    │      └──────┬───────┘
+                                  └─────────────────┘             │
+                                                                  ▼ optional
+                                                           ┌──────────────┐
+                                                           │ ClaudeSession│
+                                                           │ (OAuth, SDK) │
+                                                           └──────────────┘
+```
+
+1. **Trigger** wakes up (cron tick, file event, CLI command, …) and writes
+   one row to the `events` table plus N rows to `outbox` — one per handler
+   the routing table maps the event to.
+2. **Dispatcher** polls the outbox every ~200 ms. `claim_one()` is a single
+   atomic `UPDATE … WHERE claimed_by IS NULL` so two pollers (or two boots)
+   never claim the same row.
+3. **Handler** receives the `Event`, optionally calls Claude through the
+   `ClaudeSession` protocol, returns `Ack | Retry | DeadLetter`.
+4. **Dispatcher settles** the outbox row (`acked` / `retry` / `dead_letter`)
+   and — for idempotent handlers that returned `Ack` — writes a `dedup_keys`
+   row keyed on `(event_id, handler, attempt_epoch)`.
+
+If the daemon crashes mid-flight, on the next boot
+`outbox.recover_interrupted_rows()` finds anything still marked `running`
+and either re-queues it (idempotent handler) or moves it to `dead_letter`
+(non-idempotent — operator must `ops replay --confirm`).
+
+---
+
+## Guarantees the daemon makes
+
+- **At-least-once delivery.** A handler is invoked one or more times for
+  every event. Idempotency is the handler's job; the dispatcher only
+  guarantees no row is lost.
+- **Single instance.** `~/.daeyeon-bot/daeyeon-bot.pid` + `flock(2)`. Trying
+  to start a second daemon exits 75.
+- **2-phase shutdown** (180 s budget). Phase A stops claiming new rows,
+  Phase B drains in-flight handlers (≤120 s), Phase C checkpoints WAL and
+  releases the pidfile lock.
+- **Secrets isolation.** OAuth token comes from macOS Keychain (Mac) or a
+  0600 file (Linux), never from `os.environ` after startup, never
+  committed.
+- **Self-alerting heartbeat.** Tick lag > 3× threshold → ERROR log emitted
+  to journald / launchd-stderr so a hung daemon flags itself.
+- **Hot SQLite snapshots.** `just backup` uses `Connection.backup()` to
+  copy state.db while the daemon runs; pruned to `retention.backup_keep`.
+
+---
 
 ## Quick start (dev)
 
 ```bash
-just sync                     # uv sync (creates .venv, installs deps)
-cp config.example.toml config.toml
-cp .env.example .env
-just check                    # lint + typecheck + test
-just run                      # daeyeon-bot run (foreground)
+just sync                                  # uv sync (creates .venv)
+cp config.example.toml config.toml         # gitignored; edit freely
+cp .env.example .env                       # dev overrides only
+just check                                 # lint + typecheck + 142 tests
+just migrate                               # create state.db with schema_v=1
+just setup-token                           # paste token → Keychain (Mac)
+just doctor                                # all ✓?
+just run                                   # foreground daemon, Ctrl-C exits
 ```
 
-## Architecture
+In another terminal — fire one event end-to-end:
 
-See `docs/PLAN.md` for the full design. One-paragraph summary:
-
+```bash
+daeyeon-bot dev call echo --event-json \
+  '{"type":"manual.message","payload":{"text":"hello"}}'
+daeyeon-bot inspect events                 # see the row that was just written
+daeyeon-bot inspect outbox                 # ... and how it settled
 ```
-trigger → outbox (SQLite WAL) → dispatcher → handler → ClaudeSession
-                                                           ↓
-                                                  outbox.settle()
-```
 
-- **At-least-once** delivery. Handlers must be idempotent or accept dedup_keys.
-- **Single instance** enforced via pidfile + flock.
-- **2-phase shutdown** (180 s budget): drain in-flight, mark interrupted, exit.
-- **Secrets** via macOS Keychain or 0600 file. Never committed, never in env after startup.
-- **Self-alerting heartbeat**: tick lag > 3× threshold → ERROR log to journald / launchd-stderr.
+---
+
+## Run as a daemon
+
+### macOS (launchd)
+```bash
+just install-mac          # ~/Library/LaunchAgents/ai.rebellions.daeyeon-bot.plist
+launchctl list | grep daeyeon-bot    # PID present → alive
+tail -f ~/.daeyeon-bot/launchd.err.log
+```
+KeepAlive restarts the process if it dies. `RestartPreventExitStatus=78`
+(via the wrapper) means an `AuthError` correctly halts the loop until the
+operator rotates the token.
+
+### Linux server (systemd --user)
+```bash
+umask 077
+printf '%s' '<token>' > ~/.config/daeyeon-bot/oauth_token
+just install-linux ~/.config/daeyeon-bot/oauth_token
+journalctl --user -u daeyeon-bot -f
+```
+Type=notify + `WatchdogSec=120` ties our heartbeat into systemd's own
+watchdog.
+
+Routine ops, the parity table, and incident playbooks (corrupt SQLite,
+token revocation, hung daemon, lock conflict, disk full) live in
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+---
 
 ## Layout
 
 ```
 src/daeyeon_bot/
-├── core/        # domain types (events, results, manifest, protocols)
-├── infra/       # SDK, SQLite, secrets, structlog, migrations
-├── triggers/    # how events come in (manual, cron, webhook, …)
-├── handlers/    # what we do with them (echo, pr-self-review, …)
-├── app/         # composition: container, dispatcher, lifecycle, supervisor
-└── cli/         # Typer entry points (run, inspect, ops, dev, lifecycle)
+├── core/        # pure domain — events, results, manifests, protocols, errors
+├── infra/       # adapters — sqlite, secrets, structlog, claude SDK, migrations
+├── triggers/    # how events come in (manual today; cron / webhook / slack later)
+├── handlers/    # what we do with them (echo today; pr-review / digest later)
+├── app/         # composition — container, registry, dispatcher, lifecycle,
+│                #               supervisor, lock, heartbeat, prune, backup, replay
+└── cli/         # Typer entry points — main, lifecycle, ops, inspect, dev
 ```
 
-## Operations
+Layering is enforced by ruff TID banned-imports: `core` ↑ `infra` ↑
+`triggers`/`handlers` ↑ `app` ↑ `cli`. A cross-layer import that violates
+this fails lint.
 
-Routine ops, Mac/Linux parity table, and incident playbooks (corrupt
-SQLite, token revocation, hung daemon, pidfile lock conflict, disk full)
-live in **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)**.
+---
 
-Most-used commands:
+## Useful commands
 
 ```bash
-just doctor                  # pre-flight checks
-just status                  # heartbeat / outbox / PAUSE / pidfile
-just backup                  # hot SQLite snapshot
-just prune                   # apply retention
-just install-mac             # register launchd agent (macOS)
-just install-linux <token>   # register systemd --user unit (Linux)
+# Health
+just doctor                # state_dir / disk / heartbeat / db / token / pause
+just status                # outbox depths + quarantined triggers + pidfile
+
+# Operations
+just backup                # hot SQLite snapshot under <state_dir>/backups/
+just prune                 # apply retention (events 90d, runs 30d, dedup ttl, …)
+daeyeon-bot ops replay <event_id> --confirm
+daeyeon-bot lifecycle pause | resume
+
+# Inspection
+daeyeon-bot inspect events
+daeyeon-bot inspect outbox --status dead_letter
+daeyeon-bot inspect handlers
 ```
 
-Exit codes that wrappers care about:
+## Exit codes wrappers care about
 
-| Code | Name           | Meaning                                       | Auto-restart? |
-|------|----------------|-----------------------------------------------|---------------|
-| 0    |                | clean shutdown                                | yes (KeepAlive) |
-| 75   | EX_TEMPFAIL    | another instance holds the pidfile lock       | yes           |
-| 78   | EX_CONFIG      | `AuthError` / `ConfigError` — operator action | **no**        |
+| Code | Name        | Meaning                                       | Auto-restart |
+|------|-------------|-----------------------------------------------|--------------|
+| 0    |             | clean shutdown                                | yes          |
+| 75   | EX_TEMPFAIL | another instance holds the pidfile lock       | yes          |
+| 78   | EX_CONFIG   | `AuthError` / `ConfigError` — operator action | **no**       |
 
 ## License
 

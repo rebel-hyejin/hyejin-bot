@@ -52,7 +52,7 @@ async def connection(path: str | Path) -> AsyncGenerator[aiosqlite.Connection, N
         await conn.close()
 
 
-def _migration_files() -> list[tuple[int, str, str]]:
+def migration_files() -> list[tuple[int, str, str]]:
     """Return [(seq, filename, sql), ...] sorted by sequence number."""
     pkg = resources.files("daeyeon_bot.infra.db.migrations")
     found: list[tuple[int, str, str]] = []
@@ -84,7 +84,7 @@ async def apply_migrations(conn: aiosqlite.Connection) -> int:
     Each migration runs inside its own transaction. Returns the schema_version
     after the run.
     """
-    migrations = _migration_files()
+    migrations = migration_files()
     if not migrations:
         return await _current_schema_version(conn)
 

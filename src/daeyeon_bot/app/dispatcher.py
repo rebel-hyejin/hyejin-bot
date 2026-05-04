@@ -205,13 +205,13 @@ class Dispatcher:
                 self.stop()
                 return
             except RateLimitError as exc:
-                result = self._classify_transient(exc, RATE_LIMIT_BACKOFF_S)
+                result = self._classify_transient(exc, RATE_LIMIT_BACKOFF_S, job)
             except QuotaError as exc:
                 # PAUSE flag or local rate-limit token bucket — short backoff
                 # so the row resumes promptly once the operator clears PAUSE.
-                result = self._classify_transient(exc, PAUSE_BACKOFF_S)
+                result = self._classify_transient(exc, PAUSE_BACKOFF_S, job)
             except TransientError as exc:
-                result = self._classify_transient(exc, DEFAULT_BACKOFF_S)
+                result = self._classify_transient(exc, DEFAULT_BACKOFF_S, job)
             except (PermanentError, Exception) as exc:
                 result = DeadLetter(reason=f"{type(exc).__name__}: {exc}")
             finished = self.clock.now()
@@ -237,8 +237,21 @@ class Dispatcher:
             )
 
     @staticmethod
-    def _classify_transient(exc: Exception, default_backoff: float) -> Retry:
+    def _classify_transient(
+        exc: Exception, default_backoff: float, job: outbox.ClaimedJob
+    ) -> Retry:
         # Future: read RateLimitError.retry_after if the SDK exposes it.
+        # Log here so operators can diagnose retries from journald — Retry results
+        # don't carry the exception, and outbox.settle clears last_error to NULL.
+        _log.warning(
+            "dispatcher.handler_transient",
+            outbox_id=job.outbox_id,
+            handler=job.handler,
+            event_id=job.event.id,
+            exc_type=type(exc).__name__,
+            error=str(exc),
+            backoff_s=default_backoff,
+        )
         return Retry(after_s=default_backoff)
 
 

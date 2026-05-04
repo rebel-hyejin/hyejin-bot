@@ -31,6 +31,7 @@ class RetentionSection(BaseModel):
     runs_keep_per_handler: int = 10
     dedup_default_ttl_days: int = 7
     backup_keep: int = 5
+    gh_state_dormant_days: int = 90
 
 
 class RateLimitDefaults(BaseModel):
@@ -55,11 +56,25 @@ class ClaudeSection(BaseModel):
     default_system_prompt: str = "You are daeyeon's helpful assistant."
 
 
+class GitHubConfig(BaseModel):
+    """GitHub integration knobs. Auth itself flows through `gh` CLI."""
+
+    model_config = ConfigDict(extra="forbid")
+    username: str = ""
+    gh_call_timeout_seconds: int = 30
+
+
 class TriggerEntry(BaseModel):
     """Runtime override for a trigger. Extra keys are passed to the trigger constructor."""
 
     model_config = ConfigDict(extra="allow")
     enabled: bool = True
+
+
+class GhReviewRequestedTriggerEntry(TriggerEntry):
+    """Typed view of `[triggers.gh_review_requested]`."""
+
+    poll_interval_seconds: int = 300
 
 
 class HandlerEntry(BaseModel):
@@ -72,6 +87,22 @@ class HandlerEntry(BaseModel):
     side_effect_key: str | None = None
     concurrency: int | None = None
     accepts: list[str] | None = None
+
+
+class SizeBudget(BaseModel):
+    """PR-diff size budget enforced before calling Claude."""
+
+    model_config = ConfigDict(extra="forbid")
+    max_lines: int = 1000
+    max_files: int = 50
+
+
+class PrReviewHandlerEntry(HandlerEntry):
+    """Typed view of `[handlers.pr_review]`."""
+
+    persona_skill: str | None = None
+    min_persona_chars: int = 200
+    size_budget: SizeBudget = Field(default_factory=SizeBudget)
 
 
 class Config(BaseSettings):
@@ -87,12 +118,27 @@ class Config(BaseSettings):
     ratelimit: RateLimitSection = Field(default_factory=RateLimitSection)
     secrets: SecretsSection = Field(default_factory=SecretsSection)
     claude: ClaudeSection = Field(default_factory=ClaudeSection)
+    github: GitHubConfig = Field(default_factory=GitHubConfig)
 
     triggers: dict[str, TriggerEntry] = Field(default_factory=dict)
     handlers: dict[str, HandlerEntry] = Field(default_factory=dict)
     routing: dict[str, list[str]] = Field(default_factory=dict)
 
     raw: dict[str, Any] = Field(default_factory=dict)
+
+    def gh_review_requested_trigger_entry(self) -> GhReviewRequestedTriggerEntry:
+        """Typed view of `[triggers.gh_review_requested]` (with defaults)."""
+        raw = self.triggers.get("gh_review_requested")
+        if raw is None:
+            return GhReviewRequestedTriggerEntry()
+        return GhReviewRequestedTriggerEntry.model_validate(raw.model_dump())
+
+    def pr_review_handler_entry(self) -> PrReviewHandlerEntry:
+        """Typed view of `[handlers.pr_review]` (with defaults)."""
+        raw = self.handlers.get("pr_review")
+        if raw is None:
+            return PrReviewHandlerEntry()
+        return PrReviewHandlerEntry.model_validate(raw.model_dump())
 
     @property
     def state_dir_path(self) -> Path:

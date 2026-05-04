@@ -26,6 +26,7 @@ from daeyeon_bot.app.registry import HandlerRecord, HandlerRegistry
 from daeyeon_bot.core.errors import (
     AuthError,
     PermanentError,
+    QuotaError,
     RateLimitError,
     TransientError,
 )
@@ -38,6 +39,7 @@ _log = structlog.get_logger(__name__)
 
 DEFAULT_BACKOFF_S = 30.0
 RATE_LIMIT_BACKOFF_S = 60.0
+PAUSE_BACKOFF_S = 5.0
 
 
 @dataclass(slots=True)
@@ -204,6 +206,10 @@ class Dispatcher:
                 return
             except RateLimitError as exc:
                 result = self._classify_transient(exc, RATE_LIMIT_BACKOFF_S)
+            except QuotaError as exc:
+                # PAUSE flag or local rate-limit token bucket — short backoff
+                # so the row resumes promptly once the operator clears PAUSE.
+                result = self._classify_transient(exc, PAUSE_BACKOFF_S)
             except TransientError as exc:
                 result = self._classify_transient(exc, DEFAULT_BACKOFF_S)
             except (PermanentError, Exception) as exc:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import re
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -13,15 +16,33 @@ import typer
 
 from daeyeon_bot.app.config import load
 from daeyeon_bot.app.registry import build_handler_registry
+from daeyeon_bot.core.errors import AuthError, PermanentError
 from daeyeon_bot.core.events import Event, make_event
 from daeyeon_bot.core.results import Ack, DeadLetter, HandlerResult, Retry
 from daeyeon_bot.core.time import Clock, SystemClock
 from daeyeon_bot.infra import outbox, storage
 from daeyeon_bot.infra.claude import FakeClaudeSession
+from daeyeon_bot.infra.gh_cli import GhCli
 
 app = typer.Typer(
     help="Developer utilities: fire triggers, call handlers, IPython repl.", no_args_is_help=True
 )
+
+
+_PR_REF_URL_RE = re.compile(
+    r"^https?://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<n>\d+)/?$"
+)
+_PR_REF_SHORT_RE = re.compile(r"^(?P<owner>[^/]+)/(?P<repo>[^/#]+)#(?P<n>\d+)$")
+
+
+def _parse_pr_ref(ref: str) -> tuple[str, int]:
+    """Parse `owner/repo#N` or `https://github.com/owner/repo/pull/N`."""
+    m = _PR_REF_URL_RE.match(ref) or _PR_REF_SHORT_RE.match(ref)
+    if m is None:
+        raise typer.BadParameter(
+            "PR ref must be 'owner/repo#N' or 'https://github.com/owner/repo/pull/N'"
+        )
+    return f"{m['owner']}/{m['repo']}", int(m["n"])
 
 
 @app.command(
@@ -36,6 +57,23 @@ def fire(
     if trigger != "manual":
         raise typer.BadParameter(f"only 'manual' is supported in Phase 1, got {trigger!r}")
     asyncio.run(_fire_manual(message=message, config_path=config))
+
+
+@app.command(
+    "fire-pr-review",
+    help="Enqueue a manual PR-review event. Equivalent to a re-request from the operator.",
+)
+def fire_pr_review(
+    pr: str = typer.Option(..., "--pr", help="PR ref: 'owner/repo#N' or full GitHub URL."),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Re-review at same SHA; appends supersede header."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the event JSON instead of writing it."
+    ),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    asyncio.run(_fire_pr_review(pr=pr, force=force, dry_run=dry_run, config_path=config))
 
 
 async def _fire_manual(*, message: str, config_path: str | None) -> None:
@@ -147,6 +185,79 @@ def _render_result(result: HandlerResult) -> str:
             return f"Retry(after_s={after})"
         case DeadLetter(reason=reason):
             return f"DeadLetter(reason={reason!r})"
+
+
+async def _fire_pr_review(*, pr: str, force: bool, dry_run: bool, config_path: str | None) -> None:
+    """Build a `pr.review.manual` event and enqueue it via the outbox."""
+    repo, pr_number = _parse_pr_ref(pr)
+    cfg = load(config_path)
+    cfg.state_dir_path.mkdir(parents=True, exist_ok=True)
+
+    routing = cfg.routing.get("pr.review.manual", [])
+    if not routing:
+        raise typer.BadParameter(
+            "no handlers configured for 'pr.review.manual'. Edit config.toml's [routing] section."
+        )
+
+    gh = GhCli(timeout_seconds=cfg.github.gh_call_timeout_seconds)
+    try:
+        pr_payload = await gh.pr_get(repo, pr_number)
+    except (AuthError, PermanentError) as exc:
+        typer.echo(f"failed to fetch PR: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    head_obj = pr_payload.get("head")
+    head_sha = ""
+    if isinstance(head_obj, dict):
+        head_block = cast("dict[str, object]", head_obj)
+        sha = head_block.get("sha")
+        if isinstance(sha, str):
+            head_sha = sha
+    if not head_sha:
+        typer.echo(f"PR {pr} has no head SHA; aborting", err=True)
+        raise typer.Exit(code=1)
+
+    request_gen = f"manual_{int(time.time())}" if force else "0"
+    payload = {
+        "repo": repo,
+        "pr_number": pr_number,
+        "head_sha": head_sha,
+        "request_gen": request_gen,
+        "force": force,
+    }
+    dedup_seed = f"manual-pr-review|{repo}#{pr_number}@{head_sha}|{request_gen}|{force}"
+    dedup_key = hashlib.sha256(dedup_seed.encode("utf-8")).hexdigest()
+
+    now = datetime.now(tz=UTC)
+    event = make_event(type="pr.review.manual", payload=payload, created_at=now)
+
+    if dry_run:
+        typer.echo(
+            json.dumps(
+                {
+                    "event_id": event.id,
+                    "type": event.type,
+                    "payload": payload,
+                    "source_dedup_key": dedup_key,
+                    "routes_to": routing,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    async with storage.connection(cfg.db_path) as conn:
+        await storage.apply_migrations(conn)
+        ok = await outbox.insert_event(
+            conn, event, source="pr_review_manual", source_dedup_key=dedup_key
+        )
+        if not ok:
+            typer.echo("duplicate dedup key — an identical event is already queued", err=True)
+            raise typer.Exit(code=1)
+        for handler in routing:
+            await outbox.enqueue_handler(conn, event_id=event.id, handler=handler, now=now)
+        await conn.commit()
+    typer.echo(event.id)
 
 
 @app.command("repl", help="Drop into IPython with the production container bound.")

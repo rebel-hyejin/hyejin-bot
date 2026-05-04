@@ -6,6 +6,7 @@ PLAN.md §4.2 retention defaults:
     runs_days = 30                  # delete runs older than this …
     runs_keep_per_handler = 10      #   … unless they're in the most-recent N per handler.
     dedup_default_ttl_days = 7      # dedup_keys cleanup honours each row's expires_at.
+    gh_state_dormant_days = 90      # delete dormant gh_review_requested_state rows.
 
 Events pruning cascades the outbox rows that reference them — but only if
 none of those rows are still active (`pending` / `running` / `retry` /
@@ -22,6 +23,7 @@ from datetime import datetime, timedelta
 import aiosqlite
 
 from daeyeon_bot.app.config import Config
+from daeyeon_bot.infra import pr_review_state
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +32,7 @@ class PruneReport:
     dedup_keys_deleted: int
     events_deleted: int
     outbox_deleted: int
+    gh_state_deleted: int = 0
 
 
 async def prune(conn: aiosqlite.Connection, *, config: Config, now: datetime) -> PruneReport:
@@ -44,12 +47,17 @@ async def prune(conn: aiosqlite.Connection, *, config: Config, now: datetime) ->
         conn,
         cutoff=now - timedelta(days=config.retention.events_days),
     )
+    gh_state_deleted = await pr_review_state.prune_dormant(
+        conn,
+        older_than_iso=(now - timedelta(days=config.retention.gh_state_dormant_days)).isoformat(),
+    )
     await conn.commit()
     return PruneReport(
         runs_deleted=runs_deleted,
         dedup_keys_deleted=dedup_deleted,
         events_deleted=events_deleted,
         outbox_deleted=outbox_deleted,
+        gh_state_deleted=gh_state_deleted,
     )
 
 

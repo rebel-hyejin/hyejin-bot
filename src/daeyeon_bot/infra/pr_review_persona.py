@@ -1,0 +1,101 @@
+"""Loader for `~/.claude/skills/<name>/SKILL.md` review personas.
+
+Stat-on-each-call mtime caching: if the file hasn't been touched since the
+last read, the cached `Persona` is reused. Otherwise the body is re-read,
+re-validated, and re-cached. See `contracts/persona-skill-format.md` §4.
+
+Failures raise `core.errors.ValidationError("persona unavailable: <reason>")`.
+The handler converts that to `DeadLetter`.
+"""
+
+from __future__ import annotations
+
+import threading
+from pathlib import Path
+
+from daeyeon_bot.core.errors import ValidationError
+from daeyeon_bot.core.pr_review.persona import Persona
+
+_FRONTMATTER_DELIM = "---"
+
+
+class PersonaLoader:
+    """Mtime-cached SKILL.md loader. One instance per daemon."""
+
+    def __init__(self, *, skills_root: Path | None = None) -> None:
+        self._root = (skills_root or Path.home() / ".claude" / "skills").expanduser()
+        self._cache: Persona | None = None
+        self._lock = threading.Lock()
+
+    def load(self, name: str, *, min_chars: int = 200) -> Persona:
+        """Return the active Persona for `name`, validating + caching by mtime."""
+        if not name:
+            raise ValidationError("persona unavailable: persona_skill is empty")
+        path = self._root / name / "SKILL.md"
+        try:
+            stat = path.stat()
+        except FileNotFoundError as exc:
+            raise ValidationError(f"persona unavailable: SKILL.md not found at {path}") from exc
+        except PermissionError as exc:
+            raise ValidationError(
+                f"persona unavailable: cannot read SKILL.md ({exc.errno})"
+            ) from exc
+        except OSError as exc:
+            raise ValidationError(f"persona unavailable: stat failed ({exc.errno}: {exc})") from exc
+
+        with self._lock:
+            cached = self._cache
+            if (
+                cached is not None
+                and cached.skill_dir == path.parent
+                and cached.mtime_ns == stat.st_mtime_ns
+            ):
+                return cached
+
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValidationError(f"persona unavailable: cannot read SKILL.md ({exc})") from exc
+
+        body = _strip_frontmatter(raw)
+        _validate_body(body, min_chars=min_chars)
+        persona = Persona(skill_dir=path.parent, name=name, body=body, mtime_ns=stat.st_mtime_ns)
+        with self._lock:
+            self._cache = persona
+        return persona
+
+
+def _strip_frontmatter(text: str) -> str:
+    """Remove a leading `---\\n…\\n---\\n` block. Frontmatter parse errors are ignored."""
+    if not text.startswith(_FRONTMATTER_DELIM + "\n") and not text.startswith(
+        _FRONTMATTER_DELIM + "\r\n"
+    ):
+        return text
+    # Find the closing delimiter on its own line.
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return text
+    # First line is the opening "---". Look for the next "---" line.
+    closing_idx: int | None = None
+    for i in range(1, len(lines)):
+        stripped = lines[i].rstrip("\r\n")
+        if stripped == _FRONTMATTER_DELIM:
+            closing_idx = i
+            break
+    if closing_idx is None:
+        # No closing delimiter — file is malformed; treat the whole thing as body.
+        return text
+    return "".join(lines[closing_idx + 1 :])
+
+
+def _validate_body(body: str, *, min_chars: int) -> None:
+    if len(body) < min_chars:
+        raise ValidationError(
+            f"persona unavailable: body too short ({len(body)} chars, min {min_chars})"
+        )
+    has_real_line = any(line.strip() for line in body.splitlines())
+    if not has_real_line:
+        raise ValidationError("persona unavailable: body is whitespace-only")
+
+
+__all__ = ["PersonaLoader"]

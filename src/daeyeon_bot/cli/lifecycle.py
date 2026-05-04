@@ -66,6 +66,28 @@ def resume(
 def stop(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
 ) -> None:
+    _send_pidfile_signal(config, signal.SIGTERM, action="SIGTERM")
+
+
+@app.command(
+    "reload-config",
+    help=(
+        "Restart the daemon so config.toml is re-read. Persona file edits "
+        "(mtime change) take effect on the next event without this — only "
+        "use this when [handlers.pr_review].persona_skill itself changes."
+    ),
+)
+def reload_config(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    _send_pidfile_signal(config, signal.SIGTERM, action="reload (SIGTERM)")
+    typer.echo(
+        "supervisor (launchd/systemd KeepAlive) will start a fresh daemon with the new config",
+        err=True,
+    )
+
+
+def _send_pidfile_signal(config: str | None, sig: signal.Signals, *, action: str) -> None:
     cfg = load(config)
     pidfile = cfg.pidfile_path
     if not pidfile.exists():
@@ -77,8 +99,8 @@ def stop(
         typer.echo(f"unreadable pidfile {pidfile}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     try:
-        os.kill(pid, signal.SIGTERM)
+        os.kill(pid, sig)
     except ProcessLookupError:
         typer.echo(f"no process with pid {pid} (stale pidfile?)", err=True)
         raise typer.Exit(code=1) from None
-    typer.echo(f"SIGTERM sent to pid {pid}")
+    typer.echo(f"{action} sent to pid {pid}")

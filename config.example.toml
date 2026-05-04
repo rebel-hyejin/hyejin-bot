@@ -21,6 +21,8 @@ runs_days = 30
 runs_keep_per_handler = 10
 dedup_default_ttl_days = 7
 backup_keep = 5
+# How long dormant gh_review_requested_state rows live before prune.
+gh_state_dormant_days = 90
 
 [ratelimit.defaults]
 global_per_hour = 30
@@ -42,11 +44,22 @@ file_path = "/etc/daeyeon-bot/oauth_token"
 model = "claude-opus-4-7"
 default_system_prompt = "You are daeyeon's helpful assistant."
 
+[github]
+# Operator's GitHub username. Resolved at boot via `gh api user` if absent.
+# Used for the self-authored skip and as the search-query subject.
+username = ""
+# Per-call timeout for `gh api` invocations (seconds).
+gh_call_timeout_seconds = 30
+
 # ─── Triggers ──────────────────────────────────────────────────────────────────
 # A trigger is enabled if its section exists with `enabled = true`.
 
 [triggers.manual]
 enabled = true
+
+[triggers.gh_review_requested]
+enabled = true
+poll_interval_seconds = 300
 
 # ─── Handlers ──────────────────────────────────────────────────────────────────
 # Manifest fields here override the handler's compile-time defaults.
@@ -58,8 +71,25 @@ dedup_ttl_seconds = 86400
 concurrency = 1
 accepts = ["manual.message"]
 
+[handlers.pr_review]
+enabled = true
+idempotent = true
+dedup_ttl_seconds = 86400
+concurrency = 1
+accepts = ["gh.review_requested", "pr.review.manual"]
+# Active persona (skill directory name under ~/.claude/skills/<name>/SKILL.md).
+persona_skill = "pr-review"
+# Minimum body length after frontmatter strip; below this, persona is invalid.
+min_persona_chars = 200
+
+[handlers.pr_review.size_budget]
+max_lines = 1000      # additions + deletions across all changed files
+max_files = 50        # changed-file count
+
 # ─── Routing ───────────────────────────────────────────────────────────────────
 # event.type → list of handler names. A type with no entry is dropped (logged).
 
 [routing]
 "manual.message" = ["echo"]
+"gh.review_requested" = ["pr_review"]
+"pr.review.manual"    = ["pr_review"]

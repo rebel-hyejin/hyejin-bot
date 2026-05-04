@@ -233,3 +233,61 @@ async def test_prune_events_handles_no_outbox_rows(tmp_path: Path, now: datetime
         assert report.outbox_deleted == 0
     finally:
         await conn.close()
+
+
+async def _insert_gh_state(
+    conn: aiosqlite.Connection,
+    *,
+    repo: str,
+    pr_number: int,
+    in_pending_set: int,
+    last_observed_at: datetime,
+) -> None:
+    await conn.execute(
+        "INSERT INTO gh_review_requested_state"
+        "(repo, pr_number, head_sha, request_gen, in_pending_set, last_observed_at)"
+        " VALUES (?, ?, 'abc1234', 1, ?, ?)",
+        (repo, pr_number, in_pending_set, last_observed_at.isoformat()),
+    )
+
+
+async def test_prune_drops_dormant_gh_state_past_threshold(tmp_path: Path, now: datetime) -> None:
+    """Dormant rows past `gh_state_dormant_days` go; recent dormant + pending rows stay."""
+    conn = await _open(tmp_path / "state.db")
+    try:
+        # Dormant + ancient → should be deleted.
+        await _insert_gh_state(
+            conn,
+            repo="o/r",
+            pr_number=1,
+            in_pending_set=0,
+            last_observed_at=now - timedelta(days=120),
+        )
+        # Dormant but recent → should stay.
+        await _insert_gh_state(
+            conn,
+            repo="o/r",
+            pr_number=2,
+            in_pending_set=0,
+            last_observed_at=now - timedelta(days=7),
+        )
+        # Pending + ancient → never pruned (live request).
+        await _insert_gh_state(
+            conn,
+            repo="o/r",
+            pr_number=3,
+            in_pending_set=1,
+            last_observed_at=now - timedelta(days=365),
+        )
+        await conn.commit()
+
+        report = await prune(conn, config=_config(tmp_path), now=now)
+        assert report.gh_state_deleted == 1
+
+        async with conn.execute(
+            "SELECT pr_number FROM gh_review_requested_state ORDER BY pr_number"
+        ) as cur:
+            rows = await cur.fetchall()
+        assert {row["pr_number"] for row in rows} == {2, 3}
+    finally:
+        await conn.close()

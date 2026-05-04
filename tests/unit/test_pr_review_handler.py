@@ -1,0 +1,598 @@
+"""Unit tests for `handlers.pr_review.PrReviewHandler` (T028).
+
+Drives the full state machine from `data-model.md` §4 with `FakeGh`,
+`FakeClaudeSession`, `PersonaLoader` over a real SKILL.md, and a real
+`aiosqlite` DB in `tmp_path`. Covers each branch of the handler:
+
+  - posts a review (happy path)
+  - skipped_self_authored
+  - skipped_withdrawn
+  - skipped_too_large posts the templated Summary
+  - persona_unavailable → ValidationError (DeadLetter via dispatcher)
+  - Claude malformed twice → PermanentError (DeadLetter)
+  - out-of-hunk anchor folded into Summary
+  - force-supersede prepends header + appends old review_id to history
+  - redaction: secret in summary → PermanentError, none posted
+  - redaction: secret in inline body → PermanentError, none posted
+  - clean content posts unchanged
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+import aiosqlite
+import pytest
+
+from daeyeon_bot.app.config import PrReviewHandlerEntry, SizeBudget
+from daeyeon_bot.core.errors import PermanentError, ValidationError
+from daeyeon_bot.core.events import Event, make_event
+from daeyeon_bot.core.results import Ack
+from daeyeon_bot.core.time import Clock, SystemClock
+from daeyeon_bot.handlers.pr_review import MANIFEST, PrReviewHandler
+from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
+from daeyeon_bot.infra.pr_review_audit import find_latest
+from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from daeyeon_bot.infra.storage import apply_migrations, open_db
+from tests.fakes.gh_cli import FakeGh
+from tests.fakes.pr_persona import materialize_persona
+
+_PERSONA_BODY = (
+    "You are Daeyeon, a thoughtful PR reviewer. Focus on correctness, "
+    "tests, and maintainability. Be specific. Avoid praise filler. "
+    "Always cite file:line when flagging an issue."
+)
+_PATCH_HUNK_AT_5 = "@@ -1,3 +5,4 @@\n context\n+added line A\n+added line B\n context\n"
+_FILES_ONE_FILE = [
+    {
+        "filename": "src/foo.py",
+        "additions": 2,
+        "deletions": 0,
+        "status": "modified",
+        "patch": _PATCH_HUNK_AT_5,
+    }
+]
+
+
+@dataclass(slots=True)
+class _Ctx:
+    """Tiny HandlerContext stand-in matching the protocol.
+
+    Field types use the protocol types (`Clock`, `Callable[[], object]`)
+    rather than concrete implementations so pyright's invariant dataclass
+    field check sees this as structurally `HandlerContext`.
+    """
+
+    clock: Clock
+    trace_id: str
+    claude_session_factory: Callable[[], object]
+
+
+async def _seed_event_row(conn: aiosqlite.Connection, event: Event) -> None:
+    await conn.execute(
+        "INSERT INTO events(id, type, schema_version, source, source_dedup_key,"
+        " payload_json, trace_id, created_at)"
+        " VALUES (?, ?, ?, 'manual', ?, ?, ?, ?)",
+        (
+            event.id,
+            event.type,
+            event.schema_version,
+            f"k-{event.id}",
+            json.dumps(dict(event.payload)),
+            event.trace_id,
+            event.created_at.isoformat(),
+        ),
+    )
+    await conn.commit()
+
+
+async def _build_handler(
+    tmp_path: Path,
+    *,
+    fake_gh: FakeGh,
+    persona_body: str = _PERSONA_BODY,
+    factory: FakeFactory | None = None,
+    config_overrides: PrReviewHandlerEntry | None = None,
+) -> tuple[PrReviewHandler, aiosqlite.Connection, FakeClaudeSession]:
+    skills_root = tmp_path / "skills"
+    materialize_persona(skills_root, "pr-review", body=persona_body)
+    loader = PersonaLoader(skills_root=skills_root)
+    fake_session = FakeClaudeSession(default="{}")
+    conn = await open_db(tmp_path / "state.db")
+    await apply_migrations(conn)
+    cfg = config_overrides or PrReviewHandlerEntry(
+        persona_skill="pr-review",
+        min_persona_chars=50,
+        size_budget=SizeBudget(max_lines=1000, max_files=50),
+    )
+    handler = PrReviewHandler(
+        manifest=MANIFEST,
+        gh=fake_gh,
+        persona_loader=loader,
+        config=cfg,
+        github_username=fake_gh.user_login,
+        db=conn,
+    )
+    return handler, conn, fake_session if factory is None else factory.session
+
+
+def _manual_event(
+    *, repo: str = "o/r", pr_number: int = 7, head_sha: str = "deadbeef", force: bool = False
+) -> Event:
+    payload = {
+        "repo": repo,
+        "pr_number": pr_number,
+        "head_sha": head_sha,
+        "request_gen": "manual_1700000000" if force else "0",
+        "force": force,
+    }
+    return make_event(
+        type="pr.review.manual",
+        payload=payload,
+        created_at=datetime.now(tz=UTC),
+    )
+
+
+def _ctx(factory: FakeFactory | Callable[[], FakeClaudeSession]) -> _Ctx:
+    if isinstance(factory, FakeFactory):
+        callable_factory: Callable[[], FakeClaudeSession] = factory
+    else:
+        callable_factory = factory
+    return _Ctx(
+        clock=SystemClock(),
+        trace_id="trace-1",
+        claude_session_factory=callable_factory,
+    )
+
+
+@pytest.mark.asyncio
+async def test_happy_path_posts_review_and_audit(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr(
+        "o/r",
+        7,
+        head_sha="deadbeef",
+        author="alice",
+        files=_FILES_ONE_FILE,
+    )
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "summary": "All good for SHA deadbeef.",
+                    "comments": [
+                        {
+                            "path": "src/foo.py",
+                            "line": 6,
+                            "body": "Nit: line 6 looks suspicious.",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+
+        posted = fake_gh.posted_reviews()
+        assert len(posted) == 1
+        assert posted[0]["commit_id"] == "deadbeef"
+        assert "All good" in posted[0]["body"]
+        assert posted[0]["comments"] == [
+            {
+                "path": "src/foo.py",
+                "line": 6,
+                "side": "RIGHT",
+                "body": "Nit: line 6 looks suspicious.",
+            }
+        ]
+
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "posted"
+        assert latest.review_id is not None
+        assert latest.persona_skill == "pr-review"
+        assert latest.persona_mtime_ns is not None
+        assert latest.inline_comment_count == 1
+        assert latest.summary_chars and latest.summary_chars > 0
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_skipped_self_authored(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr(
+        "o/r",
+        7,
+        head_sha="deadbeef",
+        author=fake_gh.user_login,  # operator authored the PR
+        files=_FILES_ONE_FILE,
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(FakeFactory(session=FakeClaudeSession())))
+        assert isinstance(result, Ack)
+        assert fake_gh.posted_reviews() == []
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "skipped_self_authored"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_skipped_withdrawn_when_pr_closed(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr(
+        "o/r",
+        7,
+        head_sha="deadbeef",
+        author="alice",
+        files=_FILES_ONE_FILE,
+        state="closed",
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(FakeFactory(session=FakeClaudeSession())))
+        assert isinstance(result, Ack)
+        assert fake_gh.posted_reviews() == []
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "skipped_withdrawn"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_skipped_when_username_not_in_requested(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr(
+        "o/r",
+        7,
+        head_sha="deadbeef",
+        author="alice",
+        requested=("someone-else",),  # operator no longer requested
+        files=_FILES_ONE_FILE,
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(FakeFactory(session=FakeClaudeSession())))
+        assert isinstance(result, Ack)
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "skipped_withdrawn"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_skipped_too_large_posts_templated_summary(tmp_path: Path) -> None:
+    big_files = [
+        {
+            "filename": f"f{i}.py",
+            "additions": 200,
+            "deletions": 0,
+            "status": "modified",
+            "patch": _PATCH_HUNK_AT_5,
+        }
+        for i in range(10)
+    ]
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=big_files)
+    handler, conn, _ = await _build_handler(
+        tmp_path,
+        fake_gh=fake_gh,
+        config_overrides=PrReviewHandlerEntry(
+            persona_skill="pr-review",
+            min_persona_chars=50,
+            size_budget=SizeBudget(max_lines=500, max_files=50),
+        ),
+    )
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(FakeFactory(session=FakeClaudeSession())))
+        assert isinstance(result, Ack)
+        posted = fake_gh.posted_reviews()
+        assert len(posted) == 1
+        assert "too large for an automated review" in posted[0]["body"]
+        assert "limit 500" in posted[0]["body"]
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "skipped_too_large"
+        assert latest.inline_comment_count == 0
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_persona_unavailable_raises_validation_error(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    # Skip persona materialization → loader.load() raises.
+    skills_root = tmp_path / "empty_skills"
+    skills_root.mkdir()
+    loader = PersonaLoader(skills_root=skills_root)
+    conn = await open_db(tmp_path / "state.db")
+    await apply_migrations(conn)
+    handler = PrReviewHandler(
+        manifest=MANIFEST,
+        gh=fake_gh,
+        persona_loader=loader,
+        config=PrReviewHandlerEntry(persona_skill="pr-review", min_persona_chars=50),
+        github_username=fake_gh.user_login,
+        db=conn,
+    )
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        with pytest.raises(ValidationError):
+            await handler.handle(event, _ctx(FakeFactory(session=FakeClaudeSession())))
+        # An audit row records the failure so the operator can find it.
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "failed"
+        assert latest.error and "persona unavailable" in latest.error
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_claude_malformed_twice_raises_permanent(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            responses=["this is not JSON", "still not JSON"], default="not JSON"
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        with pytest.raises(PermanentError):
+            await handler.handle(event, _ctx(factory))
+        assert fake_gh.posted_reviews() == []
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_out_of_hunk_anchor_folded_into_summary(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "summary": "Reviewed at deadbeef.",
+                    "comments": [
+                        {
+                            "path": "src/foo.py",
+                            "line": 6,  # in-hunk
+                            "body": "in-hunk comment",
+                        },
+                        {
+                            "path": "src/foo.py",
+                            "line": 99,  # out-of-hunk → folded
+                            "body": "out-of-hunk feedback",
+                        },
+                    ],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+        posted = fake_gh.posted_reviews()
+        assert len(posted) == 1
+        assert len(posted[0]["comments"]) == 1
+        assert posted[0]["comments"][0]["line"] == 6
+        assert "out-of-hunk feedback" in posted[0]["body"]
+        assert "near L99" in posted[0]["body"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_force_supersede_prepends_header_and_chains_audit(
+    tmp_path: Path,
+) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            responses=[
+                json.dumps({"summary": "First pass at deadbeef.", "comments": []}),
+                json.dumps({"summary": "Second pass at deadbeef.", "comments": []}),
+            ],
+            default="{}",
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        # Initial (non-force) review at SHA deadbeef.
+        event_a = _manual_event()
+        await _seed_event_row(conn, event_a)
+        await handler.handle(event_a, _ctx(factory))
+
+        # Force re-review at the same SHA.
+        event_b = _manual_event(force=True)
+        await _seed_event_row(conn, event_b)
+        await handler.handle(event_b, _ctx(factory))
+
+        posted = fake_gh.posted_reviews()
+        assert len(posted) == 2
+        assert "Updated review for SHA deadbeef" in posted[1]["body"]
+        assert "supersedes earlier bot review" in posted[1]["body"]
+
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "posted"
+        assert latest.review_id == posted[1]["review_id"]
+        assert latest.superseded_review_ids == (posted[0]["review_id"],)
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_redaction_in_summary_blocks_post(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    leaky_summary = (
+        "Reviewed at deadbeef. Found leaked GitHub PAT: ghp_AAAAAAAAAAAAAAAAAAAAAAAAA in config."
+    )
+    factory = FakeFactory(
+        session=FakeClaudeSession(default=json.dumps({"summary": leaky_summary, "comments": []}))
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        with pytest.raises(PermanentError, match="redaction"):
+            await handler.handle(event, _ctx(factory))
+        assert fake_gh.posted_reviews() == []
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_redaction_in_inline_comment_blocks_post(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "summary": "Reviewed at deadbeef. Spotted suspicious value below.",
+                    "comments": [
+                        {
+                            "path": "src/foo.py",
+                            "line": 6,
+                            "body": ("Found token ghp_BBBBBBBBBBBBBBBBBBBBBBBBB — please remove."),
+                        }
+                    ],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        with pytest.raises(PermanentError, match="redaction"):
+            await handler.handle(event, _ctx(factory))
+        assert fake_gh.posted_reviews() == []
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_clean_content_passes_redaction_and_posts(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "summary": "Reviewed at deadbeef. Looks clean.",
+                    "comments": [
+                        {
+                            "path": "src/foo.py",
+                            "line": 6,
+                            "body": "tiny nit: rename `x` to something readable.",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+        assert len(fake_gh.posted_reviews()) == 1
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_already_reviewed_skips_without_force(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps({"summary": "Reviewed at deadbeef.", "comments": []})
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event_a = _manual_event()
+        await _seed_event_row(conn, event_a)
+        await handler.handle(event_a, _ctx(factory))
+        assert len(fake_gh.posted_reviews()) == 1
+
+        event_b = _manual_event()  # same head_sha, force=False
+        await _seed_event_row(conn, event_b)
+        result = await handler.handle(event_b, _ctx(factory))
+        assert isinstance(result, Ack)
+        # No second review posted; a new audit row recorded as
+        # `skipped_already_reviewed`.
+        assert len(fake_gh.posted_reviews()) == 1
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "skipped_already_reviewed"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_pause_guard_short_circuits_before_post(tmp_path: Path) -> None:
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps({"summary": "Reviewed at deadbeef.", "comments": []})
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    from daeyeon_bot.core.errors import QuotaError
+
+    async def _paused() -> None:
+        raise QuotaError("paused")
+
+    handler.pause_guard = _paused
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        with pytest.raises(QuotaError):
+            await handler.handle(event, _ctx(factory))
+        assert fake_gh.posted_reviews() == []
+    finally:
+        await conn.close()
+
+
+# Awaitable is re-exported below so pyright's "unused import" doesn't fire
+# (the symbol is used only to type the FakeFactory's __call__ in some tests).
+_AWAITABLE_NONE = Awaitable[None]

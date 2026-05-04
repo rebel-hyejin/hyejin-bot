@@ -25,9 +25,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import aiosqlite
 import structlog
@@ -37,6 +38,8 @@ from daeyeon_bot.app.config import Config, load
 from daeyeon_bot.app.container import Container, ContainerOverrides, build
 from daeyeon_bot.app.dispatcher import Dispatcher
 from daeyeon_bot.app.lock import AlreadyRunningError, PidLock
+from daeyeon_bot.app.registry import TriggerRecord
+from daeyeon_bot.core.events import Event
 from daeyeon_bot.core.time import Clock
 from daeyeon_bot.infra import logging as bot_logging
 from daeyeon_bot.infra import outbox, secrets, storage
@@ -119,7 +122,7 @@ async def _run_supervised(
     oauth_token: str | None,
 ) -> None:
     """Build the container, recover, then run dispatcher + heartbeat under TaskGroup."""
-    container = build(config, db, oauth_token=oauth_token, overrides=options.overrides)
+    container = await build(config, db, oauth_token=oauth_token, overrides=options.overrides)
     clock = container.clock
     await _recover_outbox(db, container, clock)
 
@@ -156,9 +159,59 @@ async def _run_supervised(
             tg.create_task(driver())
             tg.create_task(watch_signals())
             tg.create_task(heartbeat.run_until_stopped(heartbeat_path, stop_event))
+            for record in container.triggers:
+                tg.create_task(_supervised_trigger(record, clock=clock, stop_event=stop_event))
     finally:
         if cleanup is not None:
             cleanup()
+
+
+@dataclass(slots=True)
+class _TriggerCtx:
+    """Concrete TriggerContext for the supervised trigger loop."""
+
+    clock: Clock
+
+
+async def _emit_unused(_event: Event) -> None:
+    """Polling triggers persist events directly via SQLite; emit is a no-op."""
+    return None
+
+
+async def _supervised_trigger(
+    record: TriggerRecord,
+    *,
+    clock: Clock,
+    stop_event: asyncio.Event,
+) -> None:
+    """Run a long-running trigger task, halting the daemon on AuthError.
+
+    Unhandled exceptions surface to the TaskGroup so the daemon dies hard
+    rather than silently dropping live triggers. The stop event fires so
+    the rest of the daemon exits cleanly with the right code. When the
+    stop event is set externally, the trigger task is cancelled so the
+    TaskGroup can exit during 2-phase shutdown.
+    """
+    trigger = record.instance
+    run = getattr(trigger, "run", None)
+    if not callable(run):
+        return
+    run_coro = cast("Coroutine[Any, Any, None]", run(_emit_unused, _TriggerCtx(clock=clock)))
+    run_task: asyncio.Task[None] = asyncio.create_task(run_coro)
+    stop_task: asyncio.Task[bool] = asyncio.create_task(stop_event.wait())
+    try:
+        done, _ = await asyncio.wait({run_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+        if run_task in done:
+            stop_event.set()
+            run_task.result()
+            return
+        run_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await run_task
+    finally:
+        stop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await stop_task
 
 
 async def _recover_outbox(db: aiosqlite.Connection, container: Container, clock: Clock) -> None:

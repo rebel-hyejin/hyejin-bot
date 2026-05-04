@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from daeyeon_bot.app.config import Config, HandlerEntry
-from daeyeon_bot.app.registry import build_handler_registry
+from daeyeon_bot.app.config import Config, HandlerEntry, PrReviewHandlerEntry
+from daeyeon_bot.app.registry import PrReviewDeps, build_handler_registry
 from daeyeon_bot.core.errors import ConfigError
+from daeyeon_bot.handlers.pr_review import PrReviewHandler
+from daeyeon_bot.infra.pr_review_persona import PersonaLoader
 
 
 def test_echo_registered_with_default_manifest() -> None:
@@ -53,3 +55,39 @@ def test_unknown_handler_name_raises() -> None:
     cfg = Config(handlers={"nonexistent": HandlerEntry()})
     with pytest.raises(ConfigError):
         build_handler_registry(cfg)
+
+
+def _pr_review_cfg() -> Config:
+    return Config(
+        handlers={"pr_review": PrReviewHandlerEntry(persona_skill="pr-reviewer")},
+        routing={"pr.review.manual": ["pr_review"]},
+    )
+
+
+def test_pr_review_skipped_when_no_deps_provided() -> None:
+    """Inspection-only callers (e.g. `inspect handlers ls`) pass no deps."""
+    registry = build_handler_registry(_pr_review_cfg())
+    assert "pr_review" not in registry.by_name
+
+
+def test_pr_review_registered_when_deps_provided(tmp_path: object) -> None:
+    deps = PrReviewDeps(
+        gh=object(),
+        persona_loader=PersonaLoader(),
+        db=object(),
+        github_username="daeyeon-lee",
+    )
+    registry = build_handler_registry(_pr_review_cfg(), pr_review_deps=deps)
+    record = registry.by_name["pr_review"]
+    assert isinstance(record.instance, PrReviewHandler)
+    assert record.manifest.name == "pr_review"
+    assert "gh.review_requested" in record.manifest.accepts
+    assert "pr.review.manual" in record.manifest.accepts
+
+
+def test_pr_review_directly_instantiated_without_deps_raises() -> None:
+    """Mismatched call: enabled=True but no deps must surface a clear error."""
+    from daeyeon_bot.app.registry import instantiate_handler
+
+    with pytest.raises(ConfigError, match="PrReviewDeps"):
+        instantiate_handler("pr_review", PrReviewHandlerEntry())

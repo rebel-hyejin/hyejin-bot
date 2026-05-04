@@ -130,8 +130,8 @@ async def test_drain_timeout_marks_in_flight_as_interrupted(
 
     original = registry_mod.instantiate_handler
 
-    def patched_instantiate(name: str, entry: object) -> HandlerRecord:
-        record = original(name, entry)  # type: ignore[arg-type]
+    def patched_instantiate(name: str, entry: object, **kwargs: object) -> HandlerRecord:
+        record = original(name, entry, **kwargs)  # type: ignore[arg-type]
         if name == "echo":
             return replace(record, instance=SlowHandler())
         return record

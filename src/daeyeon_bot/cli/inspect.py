@@ -12,7 +12,8 @@ import typer
 from daeyeon_bot.app.config import Config, load
 from daeyeon_bot.app.registry import build_handler_registry
 from daeyeon_bot.app.supervisor import list_quarantined, unquarantine
-from daeyeon_bot.infra import queries, storage
+from daeyeon_bot.core.pr_review.audit import AuditRow
+from daeyeon_bot.infra import pr_review_audit, queries, storage
 
 app = typer.Typer(help="Inspect runtime state and history.", no_args_is_help=True)
 
@@ -200,6 +201,79 @@ async def _unquarantine(*, names: list[str], config_path: str | None) -> int:
     async with storage.connection(cfg.db_path) as conn:
         await storage.apply_migrations(conn)
         return await unquarantine(conn, trigger_names=names)
+
+
+@app.command(
+    "pr-review",
+    help=(
+        "Show pr_review audit history. With no flags: most recent 20 rows across"
+        " all PRs. With --pr owner/repo#N: that PR's history (newest first)."
+    ),
+)
+def pr_review(
+    pr: str | None = typer.Option(
+        None,
+        "--pr",
+        help='Filter to a single PR using "owner/repo#N".',
+    ),
+    n: int = typer.Option(20, "--n", help="Number of rows when --pr is omitted (default 20)."),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    if pr is None:
+        rows = asyncio.run(_pr_review_recent(limit=n, config_path=config))
+        if not rows:
+            typer.echo("(no audit rows)")
+            return
+        for row in rows:
+            typer.echo(_format_audit_row(row))
+        return
+
+    repo, pr_number = _parse_pr_spec(pr)
+    rows = asyncio.run(_pr_review_for(repo=repo, pr_number=pr_number, config_path=config))
+    if not rows:
+        typer.echo(f"(no audit rows for {pr})")
+        return
+    typer.echo(f"PR {pr}:")
+    for row in rows:
+        typer.echo("  " + _format_audit_row(row))
+
+
+def _parse_pr_spec(spec: str) -> tuple[str, int]:
+    if "#" not in spec:
+        raise typer.BadParameter('expected "owner/repo#N"')
+    repo, _, number_part = spec.partition("#")
+    if "/" not in repo or not number_part:
+        raise typer.BadParameter('expected "owner/repo#N"')
+    try:
+        return repo, int(number_part)
+    except ValueError as exc:
+        raise typer.BadParameter('expected integer PR number after "#"') from exc
+
+
+async def _pr_review_recent(*, limit: int, config_path: str | None) -> list[AuditRow]:
+    cfg = load(config_path)
+    async with storage.connection(cfg.db_path) as conn:
+        await storage.apply_migrations(conn)
+        return await pr_review_audit.list_recent(conn, limit=limit)
+
+
+async def _pr_review_for(*, repo: str, pr_number: int, config_path: str | None) -> list[AuditRow]:
+    cfg = load(config_path)
+    async with storage.connection(cfg.db_path) as conn:
+        await storage.apply_migrations(conn)
+        return await pr_review_audit.list_for_pr(conn, repo=repo, pr_number=pr_number)
+
+
+def _format_audit_row(row: AuditRow) -> str:
+    when = (row.submitted_at or row.created_at).isoformat()
+    review = f"review={row.review_id}" if row.review_id is not None else "review=-"
+    persona = row.persona_skill or "-"
+    chain = f" supersedes={list(row.superseded_review_ids)}" if row.superseded_review_ids else ""
+    err = f" err={row.error}" if row.error else ""
+    return (
+        f"{when}  {row.repo}#{row.pr_number}@{row.head_sha[:8]}"
+        f"  status={row.status}  {review}  persona={persona}{chain}{err}"
+    )
 
 
 @handlers.command("ls", help="List configured handlers and their effective manifests.")

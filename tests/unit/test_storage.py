@@ -35,11 +35,12 @@ async def test_open_db_applies_pragmas(db_path: Path) -> None:
 async def test_apply_migrations_creates_schema(db_path: Path) -> None:
     async with storage.connection(db_path) as conn:
         version = await storage.apply_migrations(conn)
-        assert version == 1
+        # Phase 1 schema is migration 001; feature 001 (PR review) adds 002.
+        assert version >= 1
 
         # Re-apply should be a no-op.
         version_again = await storage.apply_migrations(conn)
-        assert version_again == 1
+        assert version_again == version
 
         # All Phase 1 tables exist.
         for table in ("events", "outbox", "runs", "dedup_keys", "ratelimit_buckets", "quarantine"):

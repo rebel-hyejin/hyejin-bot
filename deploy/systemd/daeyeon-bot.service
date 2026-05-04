@@ -6,7 +6,10 @@ Wants=network-online.target
 
 [Service]
 Type=notify
-NotifyAccess=main
+# `uv run` is the Main PID; the actual python daemon is its child and is
+# the process that calls sd_notify(READY=1). NotifyAccess=all lets any
+# process in the unit's cgroup notify, which is what we need.
+NotifyAccess=all
 WatchdogSec=120
 TimeoutStopSec=180
 

@@ -208,6 +208,42 @@ async def test_happy_path_posts_review_and_audit(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_system_prompt_carries_persona_and_json_schema(tmp_path: Path) -> None:
+    """Per `contracts/claude-review-output.md` §2 the system prompt must be
+    persona body + an explicit `Output ONLY a JSON object … JSON schema:` directive
+    + the dumped ReviewOutput schema. Without this the model emits markdown and
+    handler's `json.loads` fails with "Expecting value: line 1 column 1".
+    """
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(default=json.dumps({"summary": "ok at deadbeef", "comments": []}))
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+
+        assert factory.session.calls, "handler did not call Claude"
+        system = factory.session.calls[0]["system"]
+        assert isinstance(system, str)
+        # Persona body intact
+        assert _PERSONA_BODY in system
+        # Directive verbatim from contract §2
+        assert "Output ONLY a JSON object" in system
+        assert "JSON schema:" in system
+        # Dumped schema contains both top-level keys
+        assert '"summary"' in system
+        assert '"comments"' in system
+        # Persona comes first; directive appended after
+        assert system.index(_PERSONA_BODY) < system.index("Output ONLY a JSON object")
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
 async def test_skipped_self_authored(tmp_path: Path) -> None:
     fake_gh = FakeGh()
     fake_gh.add_pr(

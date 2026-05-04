@@ -274,7 +274,7 @@ class PrReviewHandler:
             head_sha=head_sha,
             files=files,
         )
-        system_prompt = persona.body
+        system_prompt = _build_system_prompt(persona.body)
         await self.pause_guard()
         review = await self._call_claude_with_retry(
             ctx=ctx,
@@ -539,6 +539,26 @@ def _inline_to_api(comment: InlineComment) -> dict[str, Any]:
         payload["start_line"] = comment.start_line
         payload["start_side"] = comment.side
     return payload
+
+
+# Output directive appended to every persona body — verbatim from
+# `specs/001-github-pr-review-bot/contracts/claude-review-output.md` §2.
+# The persona is a chat-mode markdown reviewer; without this directive the
+# model emits prose and the handler's `json.loads` fails with
+# "Expecting value: line 1 column 1 (char 0)".
+_OUTPUT_DIRECTIVE = (
+    "\n\n---\n\n"
+    "You are reviewing the pull request below. Output ONLY a JSON object that"
+    " matches this exact JSON schema. No prose before or after, no Markdown code"
+    " fence — just the JSON object on stdout. If you have nothing to flag, emit"
+    " an empty `comments` array but still produce a meaningful `summary`.\n\n"
+    "JSON schema:\n"
+)
+
+
+def _build_system_prompt(persona_body: str) -> str:
+    schema_dump = json.dumps(ReviewOutput.model_json_schema(), indent=2)
+    return persona_body + _OUTPUT_DIRECTIVE + schema_dump
 
 
 def _render_user_message(

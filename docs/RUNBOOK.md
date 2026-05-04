@@ -267,7 +267,109 @@ Exit codes that matter:
 
 ---
 
-## 4. When in doubt
+## 4. PR review (feature 001)
+
+The `pr_review` handler posts a Claude-authored review to a GitHub PR
+when the bot's user is in the PR's `requested_reviewers` set. The trigger
+`gh_review_requested` polls every 5 minutes (default
+`triggers.gh_review_requested.poll_interval_seconds = 300`) and emits
+one event per (re-)request. The persona that drives the prose is the
+operator's `pr-reviewer` skill (SKILL.md), reloaded from disk on every
+event by mtime — no daemon restart needed when the persona changes.
+
+The feature ships behind `[handlers.pr_review].enabled = false` by
+default. Flip it to `true` in `config.toml` after running through the
+quickstart at least once.
+
+### Inspect audit history
+
+```bash
+# Most recent 20 audit rows across all PRs
+daeyeon-bot inspect pr-review
+
+# A single PR's history (newest first)
+daeyeon-bot inspect pr-review --pr octo/cat#42
+```
+
+Each line shows `submitted_at  repo#N@sha8  status=…  review=<id>
+persona=<skill> [supersedes=[…]] [err=…]`. Statuses you'll see:
+
+| status | meaning |
+|---|---|
+| `posted` | Review submitted to GitHub. `review_id` is the GitHub Review ID. |
+| `skipped_self_authored` | PR author is the bot's own user — handler refuses to review its own work. |
+| `skipped_withdrawn` | `requested_reviewers` no longer includes the bot — request was rescinded. |
+| `skipped_too_large` | PR diff exceeds the 1000-line / 50-file budget. Operator must `--force` or wait for a smaller follow-up. |
+| `skipped_already_reviewed` | An audit row already exists for this `(repo, pr, head_sha)`. Use `daeyeon-bot dev fire pr-review --force` to supersede. |
+| `failed` | Handler errored — see `err=…` and `daeyeon-bot inspect outbox --status dead_letter` for the row. |
+
+### Fix a `persona unavailable` DLQ entry
+
+The handler raises `PersonaUnavailable` (→ DeadLetter) when the
+operator's `pr-reviewer` skill can't be read at handle-time. Recovery:
+
+1. Confirm `~/.claude/skills/pr-reviewer/SKILL.md` exists and is readable
+   by the daemon's user (launchd / systemd run as the same operator;
+   permissions issues are rare but worth a `ls -l`).
+2. Fix the file (`mtime` of the new content reseeds the cache on next
+   handle).
+3. Replay the dead-lettered row:
+   ```bash
+   daeyeon-bot inspect outbox --status dead_letter
+   daeyeon-bot ops replay --outbox-id <ID> --confirm
+   ```
+
+### Raise the size budget
+
+`[handlers.pr_review].max_diff_lines` (default 1000) and
+`max_changed_files` (default 50) gate "too-large" PRs. To temporarily
+override for a one-off review without changing config, fire it manually
+with `--force`:
+
+```bash
+daeyeon-bot dev fire pr-review --repo o/r --pr 123 --force
+```
+
+`--force` also overrides `skipped_already_reviewed` and produces a
+"Supersedes review #<old>" header on the new review body — the prior
+`review_id` is appended to the audit row's `superseded_review_ids`
+JSON array (visible via `inspect pr-review --pr o/r#123`).
+
+To raise the budget durably, edit `config.toml`:
+
+```toml
+[handlers.pr_review]
+max_diff_lines = 2000
+max_changed_files = 80
+```
+
+`gh_state_dormant_days` (default 90) controls how long withdrawn
+`gh_review_requested_state` rows linger before pruning — the prune
+pass deletes only `in_pending_set = 0` rows past that horizon, so live
+review requests are never lost.
+
+### `gh auth status` is broken
+
+The handler shells out to `gh` for diff/comment/review API calls. If
+`gh` returns auth errors (`HTTP 401`), the handler raises `AuthError`
+and the dispatcher exits with code 78 — supervisors will not restart.
+
+Recovery (operator action, on the daemon's host):
+
+```bash
+gh auth status              # diagnose
+gh auth refresh -h github.com -s repo,read:org    # interactive; opens browser
+gh auth status              # confirm green
+just run                    # daemon picks up the refreshed token on next call
+```
+
+(launchd / systemd will also resume on next manual restart — the exit-78
+gate is per-process, not persistent.) If the token was leaked, also
+rotate it on github.com/settings/tokens before refreshing locally.
+
+---
+
+## 5. When in doubt
 
 - `daeyeon-bot ops doctor` is the single best diagnostic.
 - `journalctl --user -u daeyeon-bot -f` (Linux) or `tail -f

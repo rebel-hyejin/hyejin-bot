@@ -14,6 +14,7 @@
 - **PR-bound 영어 출력**: ASCII만 사용. 헤더 라인은 `CRITICAL` / `MAJOR` / `MINOR`, Verdict는 `PASS` / `CONCERNS` / `FAIL`. 이모지 사용 금지 (PR 호스트마다 렌더링 차이).
 - **한국어 토론(채팅)**: 이모지 포함. `🚨 CRITICAL` / `⚠️ MAJOR` / `💡 MINOR`, `✅ PASS` / `⚠️ CONCERNS` / `❌ FAIL`.
 - 두 표기를 섞지 않는다 — 출력 1개 안에서는 한 가지만.
+- 예외: PR-bound caller의 sign-off 줄(`— daeyeon-bot 🐥`)은 ASCII-only 규칙에서 의도적으로 제외 — 봇 식별 마커. [delivery.md §Sign-off](delivery.md#sign-off) 참조.
 
 ## Verdict
 
@@ -89,8 +90,10 @@ Suggested fix: narrow to `ConnectionError`, log with `_log.error("telemetry.fetc
 **Recommendation Rationale**
 <One sentence — why this verdict, not another.>
 
-**Verdict**: ❌ FAIL — 2 CRITICAL must clear before merge.
+**Verdict**: FAIL — 2 CRITICAL must clear before merge.
 ```
+
+(채팅 caller일 때는 Severity §표기 규칙에 따라 `❌ FAIL` 등 이모지 형태로 치환.)
 
 ## Inline comment 형식
 

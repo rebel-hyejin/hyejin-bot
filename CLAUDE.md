@@ -16,7 +16,7 @@ unless `docs/PLAN.md` is updated first.
 
 ### Current state — what's actually built
 
-Phases 0–6 of `docs/PLAN.md` are landed:
+Phases 0–7 of `docs/PLAN.md` are landed:
 
 | Phase | What |
 |---|---|
@@ -27,11 +27,11 @@ Phases 0–6 of `docs/PLAN.md` are landed:
 | 4 | Real Claude SDK + secrets (Keychain / 0600 file / env), log redaction, `AuthError` → exit 78. |
 | 5 | Deployment: launchd plist + entrypoint, systemd unit (Type=notify), install scripts, setup-token. |
 | 6 | Hardening: events retention with FK-aware cascade, hot SQLite backup, heartbeat self-alert, runbook. |
+| 7 | GitHub PR-review bot (feature 001) — `gh_review_requested` polling trigger + `pr_review` handler. Lands behind `[handlers.pr_review].enabled = false`; flip to enable. Persona reloaded from `~/.claude/skills/pr-reviewer/SKILL.md` on every event by mtime. Migration 002 adds `gh_review_requested_state` + `pr_review_audit`. Auth flows through the operator's local `gh` CLI. |
 
-The infrastructure is done. **The only built-in trigger is `manual`; the
-only built-in handler is `echo`.** Real workloads (cron, webhook, slack,
-pr-review, digest, …) are added one trigger/handler at a time using the
-recipes below.
+Built-in triggers: `manual`, `gh_review_requested`. Built-in handlers:
+`echo`, `pr_review`. Other workloads (cron, webhook, slack, digest, …) are
+added one trigger/handler at a time using the recipes below.
 
 ## Daily commands
 
@@ -311,3 +311,10 @@ Update **all three** in the same commit:
 - Design questions: `docs/PLAN.md`.
 - Interface guarantees: `CONTRACTS.md`.
 - Live state: `daeyeon-bot ops doctor && daeyeon-bot inspect status`.
+
+## Active Technologies
+- Python 3.12 (`requires-python = ">=3.12,<3.13"` in `pyproject.toml`). + existing — `claude-agent-sdk`, `pydantic` (v2), `pydantic-settings`, `structlog`, `aiosqlite`, `typer`, `keyring`, `uuid-utils`. No new runtime deps; GitHub access goes through the operator's local `gh` CLI via subprocess. (001-github-pr-review-bot)
+- SQLite WAL (existing `state.db`). One additive migration: `002_gh_review_requested_state.sql`. (001-github-pr-review-bot)
+
+## Recent Changes
+- 001-github-pr-review-bot: Added Python 3.12 (`requires-python = ">=3.12,<3.13"` in `pyproject.toml`). + existing — `claude-agent-sdk`, `pydantic` (v2), `pydantic-settings`, `structlog`, `aiosqlite`, `typer`, `keyring`, `uuid-utils`. No new runtime deps; GitHub access goes through the operator's local `gh` CLI via subprocess.

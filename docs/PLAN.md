@@ -308,6 +308,57 @@ CREATE TABLE quarantine (
 );
 ```
 
+추가 마이그레이션 — `infra/db/migrations/002_gh_review_requested_state.sql`
+(feature 001, PR-review bot). `events` / `outbox` 위에 얹는 두 테이블:
+
+```sql
+-- gh_review_requested_state: 폴링 트리거의 (repo, pr_number) 상태
+-- 'review-requested:@me' 결과를 매 5 분마다 비교해서 "재요청"을 인식.
+CREATE TABLE gh_review_requested_state (
+    repo            TEXT NOT NULL,           -- "owner/repo"
+    pr_number       INTEGER NOT NULL,
+    head_sha        TEXT NOT NULL,           -- 최근 관측된 head commit SHA
+    request_gen     INTEGER NOT NULL,        -- 단조 증가; 재요청·SHA 변경 시 +1
+    in_pending_set  INTEGER NOT NULL,        -- 0/1; 마지막 폴에 PR 이 들어 있었나
+    last_observed_at TEXT NOT NULL,
+    PRIMARY KEY (repo, pr_number)
+);
+CREATE INDEX idx_grrs_pending ON gh_review_requested_state(in_pending_set);
+
+-- pr_review_audit: 핸들러가 한 번 동작할 때마다 한 행. 강제 supersede
+-- 시 row 를 갱신하고 이전 review_id 를 superseded_review_ids JSON 에 push.
+CREATE TABLE pr_review_audit (
+    id                       INTEGER PRIMARY KEY,
+    event_id                 TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    repo                     TEXT NOT NULL,
+    pr_number                INTEGER NOT NULL,
+    head_sha                 TEXT NOT NULL,
+    request_gen              TEXT NOT NULL,
+    status                   TEXT NOT NULL CHECK (status IN
+                                 ('posted',
+                                  'skipped_self_authored',
+                                  'skipped_withdrawn',
+                                  'skipped_too_large',
+                                  'skipped_already_reviewed',
+                                  'failed')),
+    review_id                INTEGER,
+    submitted_at             TEXT,
+    summary_chars            INTEGER,
+    inline_comment_count     INTEGER,
+    superseded_review_ids    TEXT NOT NULL DEFAULT '[]',
+    persona_skill            TEXT,
+    persona_mtime_ns         INTEGER,
+    error                    TEXT,
+    created_at               TEXT NOT NULL
+);
+CREATE INDEX idx_pra_repo_pr_sha ON pr_review_audit(repo, pr_number, head_sha);
+CREATE INDEX idx_pra_event ON pr_review_audit(event_id);
+```
+
+`gh_review_requested_state` 의 dormant (`in_pending_set = 0`) 행은
+`retention.gh_state_dormant_days` (기본 90) 가 지나면 prune 으로 삭제.
+pending 상태 행은 절대 prune 되지 않는다 (살아있는 리뷰 요청).
+
 모든 SQLite 연결은 다음 PRAGMA 적용 (connection factory 헬퍼):
 ```sql
 PRAGMA journal_mode=WAL;

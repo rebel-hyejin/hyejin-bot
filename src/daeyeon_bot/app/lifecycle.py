@@ -10,7 +10,7 @@ Boot order (DO NOT REORDER — see `docs/PLAN.md` §2.3):
     7. container build
     8. heartbeat task          ← Phase 3
     9. dispatcher start
-   10. triggers start          ← Phase 1: manual is fired via CLI; no live triggers
+   10. live triggers start     ← `manual` is CLI-only; `gh_review_requested` polls
    11. wait for SIGTERM / SIGINT
 
 Shutdown is 2-phase with a 180s budget (PLAN.md §2.4):
@@ -287,16 +287,10 @@ def _install_signal_handlers(
     return _cleanup
 
 
-async def shutdown() -> None:
-    """Module-level helper kept for symmetry; real shutdown is driven by `boot`."""
-    return None
-
-
 __all__ = [
     "PHASE_B_BUDGET_S",
     "AlreadyRunningError",
     "BootOptions",
     "Container",
     "boot",
-    "shutdown",
 ]

@@ -173,7 +173,7 @@ Exit codes that matter:
    ```
 5. **Confirm the daemon makes a real Claude call.**
    ```bash
-   daeyeon-bot dev emit-manual hello-world      # or your smoke trigger
+   daeyeon-bot dev fire manual -m 'hello-world'  # or your smoke trigger
    ```
 
 **Postmortem checklist**
@@ -314,8 +314,8 @@ persona=<skill> [supersedes=[…]] [err=…]`. Statuses you'll see:
 | `skipped_self_authored` | PR author is the bot's own user — handler refuses to review its own work. |
 | `skipped_withdrawn` | `requested_reviewers` no longer includes the bot — request was rescinded. |
 | `skipped_too_large` | PR diff exceeds the 1000-line / 50-file budget. Operator must `--force` or wait for a smaller follow-up. |
-| `skipped_already_reviewed` | An audit row already exists for this `(repo, pr, head_sha)`. Use `daeyeon-bot dev fire pr-review --force` to supersede. |
-| `failed` | Handler errored — see `err=…` and `daeyeon-bot inspect outbox --status dead_letter` for the row. |
+| `skipped_already_reviewed` | An audit row already exists for this `(repo, pr, head_sha)`. Use `daeyeon-bot dev fire-pr-review --pr 'o/r#N' --force` to supersede. |
+| `failed` | Handler errored — see `err=…`; for the queue row use `daeyeon-bot inspect status` (counts) or `sqlite3 ~/.daeyeon-bot/state.db "SELECT id,event_id,handler,err FROM outbox WHERE status='dead_letter'"`. |
 
 ### Fix a `persona unavailable` DLQ entry
 
@@ -331,8 +331,9 @@ configured persona skill can't be read at handle-time. Recovery:
    handle).
 3. Replay the dead-lettered row:
    ```bash
-   daeyeon-bot inspect outbox --status dead_letter
-   daeyeon-bot ops replay --outbox-id <ID> --confirm
+   sqlite3 ~/.daeyeon-bot/state.db \
+     "SELECT event_id,handler FROM outbox WHERE status='dead_letter'"
+   daeyeon-bot ops replay <event_id> --handler pr_review --confirm
    ```
 
 ### Raise the size budget
@@ -343,7 +344,7 @@ override for a one-off review without changing config, fire it manually
 with `--force`:
 
 ```bash
-daeyeon-bot dev fire pr-review --repo o/r --pr 123 --force
+daeyeon-bot dev fire-pr-review --pr 'o/r#123' --force
 ```
 
 `--force` also overrides `skipped_already_reviewed` and produces a
@@ -391,7 +392,7 @@ rotate it on github.com/settings/tokens before refreshing locally.
 - `journalctl --user -u daeyeon-bot -f` (Linux) or `tail -f
   ~/.daeyeon-bot/stderr.log` (macOS) for live structlog stream.
 - `daeyeon-bot inspect status` for outbox / heartbeat / PAUSE / pidfile.
-- `daeyeon-bot inspect outbox --status dead_letter` to see what needs replay.
+- `sqlite3 ~/.daeyeon-bot/state.db "SELECT event_id,handler,err FROM outbox WHERE status='dead_letter'"` to see what needs replay.
 
 This daemon serves one operator on one host. Restart freely; replay
 manually; rotate the token when it leaks. The boring playbook is the

@@ -8,16 +8,17 @@
 
 ## Status
 
-Phases 0–6 implemented (vertical slice → reliability → operability → real
-SDK + secrets → deployment → hardening). The infrastructure is complete;
-the only built-in trigger is `manual` and the only built-in handler is
-`echo`. Real triggers and handlers are added one at a time.
+Phases 0–7 implemented (vertical slice → reliability → operability → real
+SDK + secrets → deployment → hardening → GitHub PR-review bot). Built-in
+triggers: `manual`, `gh_review_requested`. Built-in handlers: `echo`,
+`pr_review`. Other workloads are added one trigger/handler at a time.
 
 | Doc | Purpose |
 |---|---|
-| `docs/PLAN.md`  | Full design — architecture, phased plan, schemas. |
-| `CONTRACTS.md`  | Stable interfaces (delivery semantics, HandlerResult, manifests). |
-| `CLAUDE.md`     | Code-level guardrails for editors (humans + AI). |
+| `docs/PLAN.md`    | Full design — architecture, phased plan, schemas. |
+| `CONTRACTS.md`    | Stable interfaces (delivery semantics, HandlerResult, manifests). |
+| `CLAUDE.md`       | Code-level guardrails for editors (humans + AI). |
+| `docs/DEPLOY.md`  | Fresh-machine operator guide — token, install, smoke. |
 | `docs/RUNBOOK.md` | Routine ops, Mac/Linux parity, incident playbooks. |
 
 ---
@@ -89,8 +90,8 @@ and either re-queues it (idempotent handler) or moves it to `dead_letter`
 just sync                                  # uv sync (creates .venv)
 cp config.example.toml config.toml         # gitignored; edit freely
 cp .env.example .env                       # dev overrides only
-just check                                 # lint + typecheck + 142 tests
-just migrate                               # create state.db with schema_v=1
+just check                                 # lint + typecheck + tests
+just migrate                               # create state.db with current schema
 just setup-token                           # paste token → Keychain (Mac)
 just doctor                                # all ✓?
 just run                                   # foreground daemon, Ctrl-C exits
@@ -99,10 +100,9 @@ just run                                   # foreground daemon, Ctrl-C exits
 In another terminal — fire one event end-to-end:
 
 ```bash
-daeyeon-bot dev call echo --event-json \
-  '{"type":"manual.message","payload":{"text":"hello"}}'
-daeyeon-bot inspect events                 # see the row that was just written
-daeyeon-bot inspect outbox                 # ... and how it settled
+daeyeon-bot dev fire manual -m 'hello'     # writes event + enqueues handlers
+daeyeon-bot inspect events ls              # see the row that was just written
+daeyeon-bot inspect status                 # outbox depths + in-flight + quarantine
 ```
 
 ---
@@ -168,9 +168,11 @@ daeyeon-bot ops replay <event_id> --confirm
 daeyeon-bot lifecycle pause | resume
 
 # Inspection
-daeyeon-bot inspect events
-daeyeon-bot inspect outbox --status dead_letter
-daeyeon-bot inspect handlers
+daeyeon-bot inspect status                 # outbox depths + in-flight + quarantine
+daeyeon-bot inspect events ls              # recent events
+daeyeon-bot inspect events get <event_id>  # full event + outbox/runs history
+daeyeon-bot inspect handlers ls            # registered handlers + manifests
+daeyeon-bot inspect pr-review              # last PR-review attempts (audit table)
 ```
 
 ## Exit codes wrappers care about

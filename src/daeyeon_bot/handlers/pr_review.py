@@ -109,12 +109,6 @@ async def _no_pause() -> None:
     return None
 
 
-# Connection factory that yields an aiosqlite connection for one-shot writes.
-# The handler's `audit_writer` callable is wired by the container; tests
-# pass a small wrapper that uses the same `tmp_path` connection.
-AuditWriter = Callable[..., Awaitable[Any]]
-
-
 @dataclass(slots=True)
 class PrReviewHandler:
     """Consumes `gh.review_requested` and `pr.review.manual` events."""
@@ -591,6 +585,4 @@ def _render_user_message(
     return "\n".join(parts)
 
 
-# Avoid unused-import lint when type stubs aren't strict in this build.
-_AUDIT_WRITER: AuditWriter | None = None
 __all__ = ["MANIFEST", "PrReviewHandler"]

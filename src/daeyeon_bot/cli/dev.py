@@ -55,7 +55,10 @@ def fire(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
 ) -> None:
     if trigger != "manual":
-        raise typer.BadParameter(f"only 'manual' is supported in Phase 1, got {trigger!r}")
+        raise typer.BadParameter(
+            f"only 'manual' is supported by `dev fire`; got {trigger!r}."
+            " For PR review use `dev fire-pr-review`; `gh_review_requested` polls itself."
+        )
     asyncio.run(_fire_manual(message=message, config_path=config))
 
 

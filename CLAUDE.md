@@ -207,7 +207,7 @@ flags itself.
 - `Config.routing[event_type] = [handler_name, ...]` is the only routing
   table — no decorator-based discovery.
 - New handlers register through the explicit `if name == ...` block in
-  `app/registry.py:_instantiate_handler`. This is intentional; do not
+  `app/registry.py:instantiate_handler`. This is intentional; do not
   introduce entry-points or import-time side effects.
 
 ## Testing patterns
@@ -265,7 +265,7 @@ Exit codes the CLI returns:
    class <Name>Handler(Handler):
        async def handle(self, event, *, claude) -> HandlerResult: ...
    ```
-2. Register it in `app/registry.py:_instantiate_handler` (`if name == "<name>": return <Name>Handler(...)`).
+2. Register it in `app/registry.py:instantiate_handler` (`if name == "<name>": return <Name>Handler(...)`).
 3. Add `[handlers.<name>]` and `[routing]` lines in `config.example.toml`
    (and your local `config.toml` to actually enable it).
 4. Unit test under `tests/unit/test_<name>.py` with `FakeClaudeSession`
@@ -277,7 +277,7 @@ Exit codes the CLI returns:
 1. `src/daeyeon_bot/triggers/<name>.py` exposing `MANIFEST: TriggerManifest`
    and an async `emit_one(...)` that writes through
    `infra/outbox.write_event_and_outbox_rows`.
-2. Register it in `app/registry.py:_instantiate_trigger`.
+2. Register it in `app/registry.py:instantiate_trigger`.
 3. `[triggers.<name>] enabled = true` in `config.example.toml`.
 4. Wire it into the supervisor (`app/supervisor.py`) if it's a long-running
    poller; otherwise a one-shot CLI command in `cli/dev.py` is enough.

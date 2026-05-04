@@ -94,3 +94,16 @@ def test_empty_persona_name_raises(tmp_path: Path) -> None:
     loader = PersonaLoader(skills_root=tmp_path)
     with pytest.raises(ValidationError):
         loader.load("", min_chars=10)
+
+
+def test_default_skills_root_points_at_repo_bundle() -> None:
+    """No-arg PersonaLoader resolves to the repo's `.claude/skills/`.
+
+    Operators get the bundled `daeyeon-bot-code-review` persona without
+    having to symlink anything into `~/.claude/skills/`.
+    """
+    loader = PersonaLoader()
+    persona = loader.load("daeyeon-bot-code-review", min_chars=200)
+    assert persona.skill_dir.name == "daeyeon-bot-code-review"
+    assert persona.skill_dir.parent.name == "skills"
+    assert persona.skill_dir.parent.parent.name == ".claude"

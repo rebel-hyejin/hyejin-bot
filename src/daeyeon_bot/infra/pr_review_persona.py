@@ -1,8 +1,13 @@
-"""Loader for `~/.claude/skills/<name>/SKILL.md` review personas.
+"""Loader for `<skills_root>/<name>/SKILL.md` review personas.
 
 Stat-on-each-call mtime caching: if the file hasn't been touched since the
 last read, the cached `Persona` is reused. Otherwise the body is re-read,
 re-validated, and re-cached. See `contracts/persona-skill-format.md` §4.
+
+Default `skills_root` is the repo-bundled `.claude/skills/` directory next
+to this package (resolved from `__file__`), so the shipped persona works
+out of the box. Override via `[handlers.pr_review].skills_root` to point
+at `~/.claude/skills` or anywhere else.
 
 Failures raise `core.errors.ValidationError("persona unavailable: <reason>")`.
 The handler converts that to `DeadLetter`.
@@ -18,12 +23,17 @@ from daeyeon_bot.core.pr_review.persona import Persona
 
 _FRONTMATTER_DELIM = "---"
 
+# `<repo>/src/daeyeon_bot/infra/pr_review_persona.py` → `<repo>/.claude/skills`.
+# Editable install (`uv run`) keeps __file__ inside the source tree, so this
+# resolves to the repo's bundled skills dir.
+_REPO_SKILLS_ROOT = Path(__file__).resolve().parents[3] / ".claude" / "skills"
+
 
 class PersonaLoader:
     """Mtime-cached SKILL.md loader. One instance per daemon."""
 
     def __init__(self, *, skills_root: Path | None = None) -> None:
-        self._root = (skills_root or Path.home() / ".claude" / "skills").expanduser()
+        self._root = (skills_root or _REPO_SKILLS_ROOT).expanduser()
         self._cache: Persona | None = None
         self._lock = threading.Lock()
 

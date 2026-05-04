@@ -77,10 +77,17 @@ idempotent = true
 dedup_ttl_seconds = 86400
 concurrency = 1
 accepts = ["gh.review_requested", "pr.review.manual"]
-# Active persona (skill directory name under ~/.claude/skills/<name>/SKILL.md).
-persona_skill = "pr-review"
+# Active persona (skill directory name under <skills_root>/<name>/SKILL.md).
+# `daeyeon-bot-code-review` ships in this repo at .claude/skills/ and is the
+# default `skills_root`, so no extra setup is needed.
+persona_skill = "daeyeon-bot-code-review"
 # Minimum body length after frontmatter strip; below this, persona is invalid.
 min_persona_chars = 200
+# Optional override for where to look for `<persona_skill>/SKILL.md`.
+# Default: the repo-bundled `.claude/skills/` next to the daeyeon_bot package.
+# Set to "~/.claude/skills" if you keep your personas in the standard
+# Claude Code skills directory, or any absolute path you prefer.
+# skills_root = "~/.claude/skills"
 
 [handlers.pr_review.size_budget]
 max_lines = 1000      # additions + deletions across all changed files

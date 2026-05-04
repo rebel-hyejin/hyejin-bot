@@ -274,12 +274,26 @@ when the bot's user is in the PR's `requested_reviewers` set. The trigger
 `gh_review_requested` polls every 5 minutes (default
 `triggers.gh_review_requested.poll_interval_seconds = 300`) and emits
 one event per (re-)request. The persona that drives the prose is the
-operator's `pr-reviewer` skill (SKILL.md), reloaded from disk on every
-event by mtime — no daemon restart needed when the persona changes.
+operator's persona skill (SKILL.md) — `daeyeon-bot-code-review` by
+default; configurable via `[handlers.pr_review].persona_skill`. The
+skill is reloaded from disk on every event by mtime — no daemon
+restart needed when the persona changes.
 
 The feature ships behind `[handlers.pr_review].enabled = false` by
-default. Flip it to `true` in `config.toml` after running through the
-quickstart at least once.
+default. The bundled `daeyeon-bot-code-review` skill lives in the repo
+at `.claude/skills/`, and the loader looks there by default — flipping
+the handler on works without any extra setup.
+
+If you keep your own personas under `~/.claude/skills/` (or anywhere
+else), point the loader at that directory:
+
+```toml
+[handlers.pr_review]
+persona_skill = "my-reviewer"
+skills_root   = "~/.claude/skills"
+```
+
+Then flip `[handlers.pr_review].enabled = true` and restart the daemon.
 
 ### Inspect audit history
 
@@ -306,10 +320,12 @@ persona=<skill> [supersedes=[…]] [err=…]`. Statuses you'll see:
 ### Fix a `persona unavailable` DLQ entry
 
 The handler raises `PersonaUnavailable` (→ DeadLetter) when the
-operator's `pr-reviewer` skill can't be read at handle-time. Recovery:
+configured persona skill can't be read at handle-time. Recovery:
 
-1. Confirm `~/.claude/skills/pr-reviewer/SKILL.md` exists and is readable
-   by the daemon's user (launchd / systemd run as the same operator;
+1. Confirm `<skills_root>/<persona_skill>/SKILL.md` exists and is readable
+   (default: `<repo>/.claude/skills/daeyeon-bot-code-review`; check
+   `[handlers.pr_review].persona_skill` and `.skills_root`) by the
+   daemon's user (launchd / systemd run as the same operator;
    permissions issues are rare but worth a `ls -l`).
 2. Fix the file (`mtime` of the new content reseeds the cache on next
    handle).

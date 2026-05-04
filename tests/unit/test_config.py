@@ -100,6 +100,24 @@ def test_pr_review_handler_explicit_size_budget(tmp_path: Path) -> None:
     assert typed.size_budget.max_files == 20
 
 
+def test_pr_review_skills_root_default_and_override(tmp_path: Path) -> None:
+    """`[handlers.pr_review].skills_root` is None by default and round-trips."""
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        "[handlers.pr_review]\nenabled = true\n",
+        encoding="utf-8",
+    )
+    typed = load(str(cfg_path)).pr_review_handler_entry()
+    assert typed.skills_root is None
+
+    cfg_path.write_text(
+        "[handlers.pr_review]\nenabled = true\nskills_root = '~/.claude/skills'\n",
+        encoding="utf-8",
+    )
+    typed = load(str(cfg_path)).pr_review_handler_entry()
+    assert typed.skills_root == "~/.claude/skills"
+
+
 def test_pr_review_persona_skill_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """DAEYEON_BOT__GITHUB__USERNAME=alice reaches the github config (env_nested smoke).
 

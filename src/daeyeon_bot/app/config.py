@@ -102,6 +102,11 @@ class PrReviewHandlerEntry(HandlerEntry):
 
     persona_skill: str | None = None
     min_persona_chars: int = 200
+    # Where to look for `<persona_skill>/SKILL.md`. Defaults to
+    # `~/.claude/skills` (the standard Claude Code convention). Override
+    # to point at a repo-local skills dir like `.claude/skills` so the
+    # bundled persona works without an extra symlink step.
+    skills_root: str | None = None
     size_budget: SizeBudget = Field(default_factory=SizeBudget)
 
 

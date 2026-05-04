@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import aiosqlite
@@ -89,7 +90,9 @@ async def build(
 
     if pr_review_enabled:
         gh = overrides.gh or GhCli(timeout_seconds=config.github.gh_call_timeout_seconds)
-        persona_loader = overrides.persona_loader or PersonaLoader()
+        persona_loader = overrides.persona_loader or PersonaLoader(
+            skills_root=_resolve_skills_root(config),
+        )
         github_username = await _resolve_github_username(
             override=overrides.github_username,
             configured=config.github.username,
@@ -129,6 +132,14 @@ async def build(
 def _pr_review_enabled(config: Config) -> bool:
     entry = config.handlers.get("pr_review")
     return entry is not None and entry.enabled
+
+
+def _resolve_skills_root(config: Config) -> Path | None:
+    """Override path for `<skills_root>/<persona_skill>/SKILL.md`, or None for default."""
+    raw = config.pr_review_handler_entry().skills_root
+    if not raw:
+        return None
+    return Path(raw).expanduser()
 
 
 async def _resolve_github_username(*, override: str | None, configured: str, gh: object) -> str:

@@ -30,6 +30,18 @@ def test_keychain_raises_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
         provider.load_oauth_token()
 
 
+def test_keychain_wraps_no_backend_as_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Linux without secretstorage/kwallet raises NoKeyringError; we map to AuthError."""
+
+    def _raise(_service: str, _account: str) -> str | None:
+        raise secrets.keyring.errors.NoKeyringError("no recommended backend")
+
+    monkeypatch.setattr(secrets.keyring, "get_password", _raise)
+    provider = secrets.KeychainSecrets(service="svc", account="acct")
+    with pytest.raises(AuthError, match="keychain: backend unavailable"):
+        provider.load_oauth_token()
+
+
 def test_file_secrets_reads_token(tmp_path: Path) -> None:
     secret_file = tmp_path / "token"
     secret_file.write_text("tok-xyz\n", encoding="utf-8")

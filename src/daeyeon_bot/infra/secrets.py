@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import keyring
+import keyring.errors
 
 from daeyeon_bot.core.errors import AuthError, ConfigError
 
@@ -39,7 +40,13 @@ class KeychainSecrets:
     account: str
 
     def load_oauth_token(self) -> str:
-        token = keyring.get_password(self.service, self.account)
+        try:
+            token = keyring.get_password(self.service, self.account)
+        except keyring.errors.KeyringError as exc:
+            # No backend on Linux without secretstorage/kwallet, locked keyring,
+            # or any other backend-side failure. Surface as AuthError so the
+            # doctor reports `fail` cleanly instead of crashing on boot.
+            raise AuthError(f"keychain: backend unavailable ({exc})") from exc
         if not token:
             raise AuthError(
                 f"keychain: no token for service={self.service!r} account={self.account!r}"

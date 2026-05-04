@@ -96,10 +96,42 @@ async def test_query_concatenates_assistant_text(stub: _StubClient) -> None:
     assert stub.disconnected
 
 
-async def test_query_rejects_per_call_system_override(stub: _StubClient) -> None:
+async def test_per_call_system_override_is_passed_to_sdk(
+    stub: _StubClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-query `system=` flows into ClaudeAgentOptions at lazy connect."""
+    captured: dict[str, object] = {}
+
+    def _factory(*, options: object, **_kwargs: object) -> _StubClient:
+        captured["options"] = options
+        return stub
+
+    monkeypatch.setattr(claude_mod, "ClaudeSDKClient", _factory)
     async with _session() as session:
-        with pytest.raises(TransientError, match="default_system_prompt"):
-            await session.query("hi", system="different")
+        await session.query("hi", system="persona-A")
+    options = cast("claude_mod.ClaudeAgentOptions", captured["options"])
+    assert options.system_prompt == "persona-A"
+
+
+async def test_changing_system_mid_session_raises(stub: _StubClient) -> None:
+    """Same session, two queries with different system → TransientError."""
+    stub.scripted_messages = [
+        AssistantMessage(
+            content=[TextBlock(text="ok")],
+            model="m",
+            parent_tool_use_id=None,
+            error=None,
+            usage=None,
+            message_id="mid",
+            stop_reason=None,
+            session_id="s",
+            uuid="u",
+        ),
+    ]
+    async with _session() as session:
+        await session.query("hi", system="persona-A")
+        with pytest.raises(TransientError, match="cannot change system prompt"):
+            await session.query("hi", system="persona-B")
 
 
 async def test_connect_failure_maps_to_transient(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -109,9 +141,9 @@ async def test_connect_failure_maps_to_transient(monkeypatch: pytest.MonkeyPatch
         return instance
 
     monkeypatch.setattr(claude_mod, "ClaudeSDKClient", _factory)
-    with pytest.raises(TransientError, match="claude CLI not found"):
-        async with _session():
-            pass
+    async with _session() as session:
+        with pytest.raises(TransientError, match="claude CLI not found"):
+            await session.query("hi")
 
 
 async def test_rate_limit_event_maps_to_rate_limit_error(stub: _StubClient) -> None:
@@ -130,6 +162,36 @@ async def test_rate_limit_event_maps_to_rate_limit_error(stub: _StubClient) -> N
     async with _session() as session:
         with pytest.raises(RateLimitError):
             await session.query("hi")
+
+
+async def test_rate_limit_allowed_warning_does_not_raise(stub: _StubClient) -> None:
+    """`allowed_warning` is informational — request went through."""
+    info = RateLimitInfo(
+        status="allowed_warning",
+        resets_at=1777890600,
+        rate_limit_type="five_hour",
+        utilization=0.93,
+        overage_status=None,
+        overage_resets_at=None,
+        overage_disabled_reason=None,
+        raw={},
+    )
+    rate_event = RateLimitEvent(rate_limit_info=info, uuid="u", session_id="s")
+    text_msg = AssistantMessage(
+        content=[TextBlock(text="ok")],
+        model="m",
+        parent_tool_use_id=None,
+        error=None,
+        usage=None,
+        message_id="mid",
+        stop_reason=None,
+        session_id="s",
+        uuid="u",
+    )
+    stub.scripted_messages = [cast("object", rate_event), cast("object", text_msg)]
+    async with _session() as session:
+        out = await session.query("hi")
+    assert out == "ok"
 
 
 async def test_auth_keyword_in_process_error_maps_to_auth_error(stub: _StubClient) -> None:

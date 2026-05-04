@@ -8,7 +8,8 @@ Two implementations of the same `ClaudeSession` shape:
 
 Errors map onto `core.errors`:
     * `CLINotFoundError` / `CLIConnectionError` → `TransientError` (retry).
-    * `RateLimitEvent` from the SDK stream → `RateLimitError`.
+    * `RateLimitEvent` with a non-allowed status → `RateLimitError`.
+      `allowed` / `allowed_warning` are informational and logged, not raised.
     * `ProcessError` whose stderr looks auth-related → `AuthError`.
     * Anything else → propagates to the dispatcher's generic catch.
 """
@@ -20,6 +21,7 @@ from dataclasses import dataclass, field
 from types import TracebackType
 from typing import NoReturn, Protocol, runtime_checkable
 
+import structlog
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -32,6 +34,13 @@ from claude_agent_sdk import (
 )
 
 from daeyeon_bot.core.errors import AuthError, RateLimitError, TransientError
+
+_log = structlog.get_logger(__name__)
+
+# RateLimitEvent statuses the SDK emits to inform the client that a request
+# went through. Anything outside this set means the request was denied and
+# the dispatcher should retry.
+_RATE_LIMIT_ALLOWED_STATUSES: frozenset[str] = frozenset({"allowed", "allowed_warning"})
 
 _AUTH_HINTS: tuple[str, ...] = (
     "401",
@@ -113,21 +122,65 @@ class FakeFactory:
 class RealClaudeSession:
     """`ClaudeSDKClient` wrapper that fits the `ClaudeSession` protocol.
 
-    The session takes ownership of an SDK client per handler invocation:
-    `__aenter__` connects, `query` round-trips a prompt + collects assistant
-    text, `__aexit__` disconnects. Errors are translated to `core.errors`
-    so the dispatcher can route them to retry / dead-letter / halt.
+    The SDK ties `system_prompt` to `ClaudeAgentOptions` at connect time,
+    so we connect lazily on the first `query()` using either the per-call
+    `system=` override or `default_system_prompt`. A subsequent query in
+    the same session may not change the system prompt — open a new
+    session per persona.
     """
 
     oauth_token: str
     model: str | None
     default_system_prompt: str | None
     _client: ClaudeSDKClient | None = field(default=None, init=False)
+    _connected_system: str | None = field(default=None, init=False)
+    _entered: bool = field(default=False, init=False)
 
     async def __aenter__(self) -> RealClaudeSession:
+        self._entered = True
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self._entered = False
+        client = self._client
+        self._client = None
+        self._connected_system = None
+        if client is None:
+            return
+        try:
+            await client.disconnect()
+        except CLIConnectionError:  # pragma: no cover — best-effort
+            return
+
+    async def query(self, prompt: str, *, system: str | None = None) -> str:
+        if not self._entered:
+            raise TransientError("RealClaudeSession used outside of `async with`")
+        effective_system = system if system is not None else self.default_system_prompt
+        client = await self._ensure_connected(effective_system)
+        try:
+            await client.query(prompt)
+            return await _collect_assistant_text(client)
+        except ProcessError as exc:
+            _raise_process_error(exc)
+        except CLIConnectionError as exc:
+            raise TransientError(f"claude CLI connection lost: {exc}") from exc
+
+    async def _ensure_connected(self, system_prompt: str | None) -> ClaudeSDKClient:
+        if self._client is not None:
+            if system_prompt != self._connected_system:
+                raise TransientError(
+                    "RealClaudeSession cannot change system prompt mid-session;"
+                    " open a new session per persona"
+                )
+            return self._client
         options = ClaudeAgentOptions(
             model=self.model,
-            system_prompt=self.default_system_prompt,
+            system_prompt=system_prompt,
             env={"CLAUDE_CODE_OAUTH_TOKEN": self.oauth_token},
         )
         client = ClaudeSDKClient(options=options)
@@ -138,45 +191,8 @@ class RealClaudeSession:
         except CLIConnectionError as exc:
             raise TransientError(f"claude CLI connect failed: {exc}") from exc
         self._client = client
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        client = self._client
-        self._client = None
-        if client is None:
-            return
-        try:
-            await client.disconnect()
-        except CLIConnectionError:  # pragma: no cover — best-effort
-            return
-
-    async def query(self, prompt: str, *, system: str | None = None) -> str:
-        client = self._require_client()
-        if system is not None and system != self.default_system_prompt:
-            # The current SDK ties system prompts to ClaudeAgentOptions at
-            # connect time. Rather than silently ignore an override, surface
-            # a transient error so the caller knows to set it up-front.
-            raise TransientError(
-                "RealClaudeSession does not support per-query system prompts;"
-                " configure config.claude.default_system_prompt instead"
-            )
-        try:
-            await client.query(prompt)
-            return await _collect_assistant_text(client)
-        except ProcessError as exc:
-            _raise_process_error(exc)
-        except CLIConnectionError as exc:
-            raise TransientError(f"claude CLI connection lost: {exc}") from exc
-
-    def _require_client(self) -> ClaudeSDKClient:
-        if self._client is None:
-            raise TransientError("RealClaudeSession used outside of `async with`")
-        return self._client
+        self._connected_system = system_prompt
+        return client
 
 
 async def _collect_assistant_text(client: ClaudeSDKClient) -> str:
@@ -184,7 +200,17 @@ async def _collect_assistant_text(client: ClaudeSDKClient) -> str:
     parts: list[str] = []
     async for message in client.receive_response():
         if isinstance(message, RateLimitEvent):
-            raise RateLimitError(f"claude rate limit: {message}")
+            status = message.rate_limit_info.status
+            if status not in _RATE_LIMIT_ALLOWED_STATUSES:
+                raise RateLimitError(f"claude rate limit ({status}): {message}")
+            # Informational: request was allowed, just nearing the quota.
+            _log.warning(
+                "claude.rate_limit_warning",
+                status=status,
+                rate_limit_type=message.rate_limit_info.rate_limit_type,
+                utilization=message.rate_limit_info.utilization,
+            )
+            continue
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):

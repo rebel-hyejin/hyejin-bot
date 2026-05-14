@@ -43,9 +43,10 @@ def test_builder_smclog_uses_ip_label() -> None:
 
 
 def test_builder_kernel_substitutes_host_name() -> None:
-    template = '{hostname="{host}", job=~"varlogs|systemd-journal", filename=~".*kern.*"}'
+    template = '{hostname="{host}", logtype="kernel"}'
     out = LokiQueryBuilder.kernel_for(host_name="ssw-giga-02", template=template)
     assert 'hostname="ssw-giga-02"' in out
+    assert 'logtype="kernel"' in out
 
 
 def test_builder_escapes_quotes_in_tc_name() -> None:

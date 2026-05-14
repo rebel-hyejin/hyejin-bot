@@ -80,10 +80,11 @@ per_stream_max_bytes = 1048576
 # Per-request timeout for httpx (seconds).
 timeout_seconds = 30
 # Loki kernel/syslog label-schema templates. {host} is substituted with the
-# hostname-by-name at query time. Override only if promtail/vector labels
-# diverge from defaults.
-kernel_query_template = '{hostname="{host}", job=~"varlogs|systemd-journal", filename=~".*kern.*"}'
-syslog_query_template = '{hostname="{host}", job=~"varlogs|systemd-journal", filename=~".*syslog.*"}'
+# hostname-by-name at query time. Default schema is `hostname` + `logtype`
+# (canonical SSW Loki shape — see ssw-debugger log-analysis SKILL.md).
+# Override only if your fleet exports under a different label scheme.
+kernel_query_template = '{hostname="{host}", logtype="kernel"}'
+syslog_query_template = '{hostname="{host}", logtype="syslog"}'
 
 # ─── Triggers ──────────────────────────────────────────────────────────────────
 # A trigger is enabled if its section exists with `enabled = true`.

@@ -173,7 +173,8 @@ def test_loki_config_defaults() -> None:
     assert cfg.loki.base_url == "http://loki.ssw.rbln.in"
     assert cfg.loki.per_stream_max_bytes == 1_048_576
     assert "regression-fwlog" not in cfg.loki.kernel_query_template  # kernel != fwlog
-    assert "filename" in cfg.loki.kernel_query_template
+    assert 'logtype="kernel"' in cfg.loki.kernel_query_template
+    assert 'logtype="syslog"' in cfg.loki.syslog_query_template
 
 
 def test_jira_assigned_trigger_entry_defaults() -> None:

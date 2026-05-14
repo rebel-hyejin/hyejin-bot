@@ -92,13 +92,12 @@ class LokiConfig(BaseModel):
     per_stream_max_bytes: int = 1_048_576  # 1 MB
     timeout_seconds: int = 30
     # LogQL templates for kernel/syslog streams. `{host}` is substituted at
-    # query time with the hostname-by-name.
-    kernel_query_template: str = (
-        '{hostname="{host}", job=~"varlogs|systemd-journal", filename=~".*kern.*"}'
-    )
-    syslog_query_template: str = (
-        '{hostname="{host}", job=~"varlogs|systemd-journal", filename=~".*syslog.*"}'
-    )
+    # query time with the hostname-by-name. The label schema is the canonical
+    # SSW Loki shape — `hostname` + `logtype` — documented in
+    # ssw-debugger/.../skills/log-analysis/SKILL.md. The old `job` / `filename`
+    # combo matched zero streams in production.
+    kernel_query_template: str = '{hostname="{host}", logtype="kernel"}'
+    syslog_query_template: str = '{hostname="{host}", logtype="syslog"}'
 
 
 class TriggerEntry(BaseModel):

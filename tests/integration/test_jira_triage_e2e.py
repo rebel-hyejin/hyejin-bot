@@ -45,16 +45,7 @@ def _bundled_persona_root() -> Path:
 def _claude_response() -> str:
     return json.dumps(
         {
-            "summary_md": (
-                "h3. Symptom\nrblnWaitJob TIMEDOUT 후 TDR.\n\n"
-                "h3. Evidence cited\n- loki.kernel — `TDR detected`\n\n"
-                "h3. Likely layer\n*CpFw*\n\n"
-                "h3. Next data to collect\n- dmesg"
-            ),
-            "domain": "CpFw",
-            "severity": "sev2",
-            "suspected_duplicates": [],
-            "needs_human": False,
+            "symptom": "rblnWaitJob TIMEDOUT 후 KMD TDR; root는 FW.",
             "evidence": [
                 {
                     "source": "loki.kernel",
@@ -62,6 +53,12 @@ def _claude_response() -> str:
                     "citation": "2026-05-13T06:55:12Z",
                 }
             ],
+            "domain": "CpFw",
+            "layer_rationale": "kernel TDR는 backtracking상 FW abort의 증상.",
+            "next_data": ["dmesg 캡처", "rblntrace 재현"],
+            "severity": "sev2",
+            "suspected_duplicates": [],
+            "needs_human": False,
         }
     )
 

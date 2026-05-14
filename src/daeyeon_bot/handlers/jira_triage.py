@@ -20,7 +20,8 @@ Consumes `jira.assigned` (auto, from `jira_assigned` trigger) and
     (j) call Claude with `persona_body + JSON-schema appendix`
         + snapshot user message; parse + validate; retry once
     (k) verify every `evidence.quote` appears verbatim in the snapshot
-    (l) redact summary_md + every evidence.quote — match → DeadLetter
+    (l) redact every prose field (symptom, layer_rationale, next_data,
+        evidence.quote, suspected_duplicates.basis) — match → DeadLetter
     (m) build wiki-markup body (supersede header when force + prior)
     (n) jira.post_comment
     (o) audit row 'posted' + optional record_supersede
@@ -111,18 +112,39 @@ You are triaging the Jira ticket below. Output ONLY a JSON object that
 matches this exact shape. No prose before or after, no Markdown code
 fence — just the JSON object on stdout.
 
-Required keys: `summary_md`, `domain`, `severity`, `needs_human`.
-Optional keys: `suspected_duplicates` (list, max 5), `evidence` (list, max 50).
+Required keys:
+  - `symptom`         : str — one-sentence description of what failed
+                        (Korean prose OK; preserve English technical
+                        terms verbatim — e.g. "rblnWaitJob TIMEDOUT").
+  - `evidence`        : list[{source, quote, citation}] — see below.
+  - `domain`          : Driver | SysFw | CpFw | SysSol | DevOps |
+                        Connectivity | unknown.
+  - `layer_rationale` : str — one-sentence justification for the chosen
+                        domain, citing the strongest evidence lines.
+  - `next_data`       : list[str] — concrete next-step suggestions, each
+                        a short imperative (commands, files to collect,
+                        hosts to re-run on). Max 10 items.
+  - `severity`        : sev1 | sev2 | sev3 | unknown.
+  - `needs_human`     : bool — set true whenever you cannot confidently
+                        diagnose. The operator reviews these.
 
-- `domain` ENUM: Driver | SysFw | CpFw | SysSol | DevOps | Connectivity | unknown.
-- `severity` ENUM: sev1 | sev2 | sev3 | unknown.
-- `evidence` MUST be non-empty whenever `domain != "unknown"`.
-- Every `evidence.quote` MUST appear verbatim in the corresponding
-  Run Snapshot section. The bot rejects fabricated quotes.
-- `evidence.citation` formats:
-  - Loki streams: ISO8601 timestamp UTC.
-  - SSH artifacts: `ssh.<filename>:<line>`.
-  - Source files: `<repo-relative path>:<line>`.
+Optional keys:
+  - `suspected_duplicates` : list[{key, basis}] — max 5. Best-effort,
+                             NOT verified by the bot.
+
+Field constraints:
+  - `evidence` MUST be non-empty whenever `domain != "unknown"`. If you
+    cannot find evidence, set `domain="unknown"` + `needs_human=true`.
+  - `evidence[*].source` ENUM: `loki.fwlog` | `loki.smclog` |
+    `loki.kernel` | `loki.syslog` | `ssh.output_xml` | `ssh.dmesg` |
+    `ssh.console` | `test_code` | `product_code` | `ticket.error_log`.
+  - `evidence[*].quote` MUST appear verbatim in the corresponding
+    Run Snapshot section. The bot rejects fabricated quotes.
+  - `evidence[*].citation` formats:
+    - Loki streams: ISO8601 timestamp UTC.
+    - SSH artifacts: `ssh.<filename>:<line>`.
+    - Source files: `<repo-relative path>:<line>`.
+    - Ticket error log: `ticket.error_log:<line>`.
 """
 
 
@@ -717,7 +739,7 @@ class JiraTriageHandler:
             severity=triage.severity,
             comment_id=posted.comment_id,
             posted_at=posted.posted_at,
-            summary_chars=len(triage.summary_md),
+            summary_chars=len(triage.symptom) + len(triage.layer_rationale),
             evidence_count=len(triage.evidence),
             loki_error=loki_error,
             ssh_error=ssh_error,
@@ -900,17 +922,19 @@ def _strip_code_fence(text: str) -> str:
 def _draft_from_output(parsed: TriageOutput) -> TriageDraft:
     """Convert validated Pydantic output → core dataclass."""
     return TriageDraft(
-        summary_md=parsed.summary_md,
+        symptom=parsed.symptom,
+        evidence=tuple(
+            EvidenceItem(source=e.source, quote=e.quote, citation=e.citation)
+            for e in parsed.evidence
+        ),
         domain=parsed.domain,
+        layer_rationale=parsed.layer_rationale,
+        next_data=tuple(parsed.next_data),
         severity=parsed.severity,
         suspected_duplicates=tuple(
             SuspectedDuplicate(key=d.key, basis=d.basis) for d in parsed.suspected_duplicates
         ),
         needs_human=parsed.needs_human,
-        evidence=tuple(
-            EvidenceItem(source=e.source, quote=e.quote, citation=e.citation)
-            for e in parsed.evidence
-        ),
     )
 
 
@@ -958,8 +982,8 @@ def _build_haystack(snapshot: RunSnapshot) -> dict[str, str]:
 
 
 def _enforce_redaction(triage: TriageDraft) -> None:
-    """Strict redaction: any match in summary or evidence quote → DeadLetter."""
-    for label, text in (("summary_md", triage.summary_md), *_iter_evidence(triage)):
+    """Strict redaction: any match in any prose field or quote → DeadLetter."""
+    for label, text in _iter_prose_fields(triage):
         _, spans = redact_with_provenance(text)
         if spans:
             raise PermanentError(
@@ -968,9 +992,16 @@ def _enforce_redaction(triage: TriageDraft) -> None:
             )
 
 
-def _iter_evidence(triage: TriageDraft) -> Iterator[tuple[str, str]]:
+def _iter_prose_fields(triage: TriageDraft) -> Iterator[tuple[str, str]]:
+    """Yield every (label, text) the handler will post — everything must survive redaction."""
+    yield ("symptom", triage.symptom)
+    yield ("layer_rationale", triage.layer_rationale)
+    for i, item in enumerate(triage.next_data):
+        yield (f"next_data[{i}]", item)
     for i, item in enumerate(triage.evidence):
         yield (f"evidence[{i}].quote", item.quote)
+    for i, dup in enumerate(triage.suspected_duplicates):
+        yield (f"suspected_duplicates[{i}].basis", dup.basis)
 
 
 def _build_body(

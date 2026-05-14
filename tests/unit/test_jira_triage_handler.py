@@ -376,11 +376,7 @@ async def test_happy_path_posts_comment_and_audits(tmp_path: Path) -> None:
         # Override Claude to return a response whose evidence quote is in the snapshot.
         good = json.dumps(
             {
-                "summary_md": "h3. Symptom\nx\n\nh3. Evidence cited\n- a",
-                "domain": "CpFw",
-                "severity": "sev2",
-                "suspected_duplicates": [],
-                "needs_human": False,
+                "symptom": "rblnWaitJob 직후 KMD TDR; root는 FW.",
                 "evidence": [
                     {
                         "source": "loki.kernel",
@@ -388,6 +384,12 @@ async def test_happy_path_posts_comment_and_audits(tmp_path: Path) -> None:
                         "citation": "2026-05-13T06:55:12Z",
                     }
                 ],
+                "domain": "CpFw",
+                "layer_rationale": "kernel TDR가 backtracking상 FW abort의 증상.",
+                "next_data": ["FW abort dump 캡처", "rblntrace 재현"],
+                "severity": "sev2",
+                "suspected_duplicates": [],
+                "needs_human": False,
             }
         )
         session = FakeClaudeSession(responses=[good])
@@ -518,12 +520,14 @@ def test_verify_evidence_quotes_passes_when_present() -> None:
         ssh_error=None,
     )
     triage = TriageDraft(
-        summary_md="x",
+        symptom="x",
+        evidence=(EvidenceItem(source="loki.kernel", quote="the quote here", citation="t"),),
         domain="CpFw",
+        layer_rationale="r",
+        next_data=(),
         severity="sev2",
         suspected_duplicates=(),
         needs_human=False,
-        evidence=(EvidenceItem(source="loki.kernel", quote="the quote here", citation="t"),),
     )
     _verify_evidence_quotes(triage, snapshot)  # must not raise
 
@@ -561,12 +565,14 @@ def test_verify_evidence_quotes_rejects_fabricated() -> None:
         ssh_error=None,
     )
     triage = TriageDraft(
-        summary_md="x",
+        symptom="x",
+        evidence=(EvidenceItem(source="loki.kernel", quote="FABRICATED", citation="t"),),
         domain="CpFw",
+        layer_rationale="r",
+        next_data=(),
         severity="sev2",
         suspected_duplicates=(),
         needs_human=False,
-        evidence=(EvidenceItem(source="loki.kernel", quote="FABRICATED", citation="t"),),
     )
     with pytest.raises(PermanentError, match="fabricated evidence quote"):
         _verify_evidence_quotes(triage, snapshot)

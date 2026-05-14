@@ -68,14 +68,7 @@ def _materialize_persona(root: Path, body: str) -> Path:
 def _claude_response() -> str:
     return json.dumps(
         {
-            "summary_md": (
-                "h3. Symptom\nTDR.\n\nh3. Evidence cited\n- loki.kernel — `TDR detected`\n\n"
-                "h3. Likely layer\n*CpFw*\n\nh3. Next data to collect\n- dmesg"
-            ),
-            "domain": "CpFw",
-            "severity": "sev2",
-            "suspected_duplicates": [],
-            "needs_human": False,
+            "symptom": "TDR (kernel) — FW abort 증상.",
             "evidence": [
                 {
                     "source": "loki.kernel",
@@ -83,6 +76,12 @@ def _claude_response() -> str:
                     "citation": "2026-05-13T06:55:12Z",
                 }
             ],
+            "domain": "CpFw",
+            "layer_rationale": "kernel TDR는 FW abort의 backtracking 증상.",
+            "next_data": ["dmesg 캡처"],
+            "severity": "sev2",
+            "suspected_duplicates": [],
+            "needs_human": False,
         }
     )
 

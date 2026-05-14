@@ -29,10 +29,10 @@ def test_bundled_skill_loads_via_persona_loader() -> None:
 
 
 def test_bundled_skill_contains_section_keywords() -> None:
-    """Future drift: persona body must mention the 4 canonical sections."""
+    """Future drift: persona body must mention each TriageOutput field name."""
     body = (_BUNDLED_ROOT / _SKILL_NAME / "SKILL.md").read_text(encoding="utf-8")
     lower = body.lower()
-    for keyword in ("symptom", "evidence", "likely layer", "next data"):
+    for keyword in ("symptom", "evidence", "layer_rationale", "next_data"):
         assert keyword in lower, f"bundled persona missing keyword: {keyword!r}"
 
 

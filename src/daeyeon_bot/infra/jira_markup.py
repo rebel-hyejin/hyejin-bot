@@ -2,9 +2,15 @@
 
 The bot posts comments via REST v2 (`POST /rest/api/2/issue/{key}/comment`)
 which accepts a plain-string `body` in Jira wiki markup. This module
-generates that body deterministically from a `TriageDraft`. Wiki-markup
-dialect matches `ssw-bundle/inv/test_report/jira_markup.py` conventions
-(`*bold*`, `h3.`, `{noformat}`, `{quote}`, `{{code}}`).
+assembles a structured, panel-based layout from a `TriageDraft`.
+
+Panel layout (Atlassian Cloud renders these as titled card blocks):
+  📍 Symptom
+  📎 Evidence cited
+  🎯 Likely layer: <domain>     ← color-coded per layer
+  🔬 Next data to collect
+  (optional) Suspected duplicates
+  (optional) needs_human callout
 
 Pure functions, stdlib only.
 """
@@ -16,6 +22,33 @@ from daeyeon_bot.core.jira_triage.types import (
     SuspectedDuplicate,
     TriageDraft,
 )
+
+# Per-domain panel color. The (border, bg) pairs are chosen to render
+# readably on both light and dark Jira themes — the bg is a desaturated
+# tint, the border is the strong accent.
+_DOMAIN_COLORS: dict[str, tuple[str, str]] = {
+    "Driver": ("#3b82f6", "#dbeafe"),  # blue
+    "SysFw": ("#f97316", "#fed7aa"),  # orange
+    "CpFw": ("#ef4444", "#fecaca"),  # red
+    "SysSol": ("#a855f7", "#e9d5ff"),  # purple
+    "DevOps": ("#10b981", "#d1fae5"),  # green
+    "Connectivity": ("#14b8a6", "#ccfbf1"),  # teal
+    "unknown": ("#6b7280", "#e5e7eb"),  # gray
+}
+
+_NEUTRAL_BORDER = "#cbd5e1"
+_NEUTRAL_BG = "#f8fafc"
+
+# Per-severity badge accent (for the trailing meta table).
+_SEVERITY_LABELS: dict[str, str] = {
+    "sev1": "🔴 sev1",
+    "sev2": "🟠 sev2",
+    "sev3": "🟡 sev3",
+    "unknown": "⚪ unknown",
+}
+
+
+# ── Primitive helpers ────────────────────────────────────────────────────────
 
 
 def h3(title: str) -> str:
@@ -45,44 +78,110 @@ def quote(text: str) -> str:
 
 
 def bold(text: str) -> str:
-    """`*bold*` inline. Doesn't escape — caller is responsible for nesting."""
+    """`*bold*` inline."""
     return f"*{text}*"
 
 
+def panel(
+    *,
+    title: str,
+    body: str,
+    border_color: str = _NEUTRAL_BORDER,
+    bg_color: str = _NEUTRAL_BG,
+) -> str:
+    """Render a Jira `{panel}` block with a titled, colored frame."""
+    return (
+        f"{{panel:title={title}|borderStyle=solid|borderColor={border_color}"
+        f"|titleBGColor={border_color}|bgColor={bg_color}}}\n"
+        f"{body}\n"
+        "{panel}"
+    )
+
+
+# ── Top-level assembly ──────────────────────────────────────────────────────
+
+
 def build_comment(triage: TriageDraft, *, supersede_header: str | None = None) -> str:
-    """Assemble the 4-section comment body.
+    """Assemble the structured panel-based comment body.
 
     Sections, in order:
       1. (optional) supersede header in `{quote}…{quote}`
-      2. h3. Symptom
-      3. h3. Evidence cited
-      4. h3. Likely layer
-      5. h3. Next data to collect
-      6. (optional) suspected duplicates block
-
-    `summary_md` (from `TriageDraft`) is the full 4-section body Claude
-    produced. We trust that and ship it as-is — wiki-markup converters
-    are out of scope; the persona is told to emit Jira wiki markup
-    directly in the 4-section template.
+      2. 📍 Symptom panel
+      3. 📎 Evidence cited panel (bullet list)
+      4. 🎯 Likely layer: <domain> panel (color-coded per domain)
+      5. 🔬 Next data to collect panel (bullet list)
+      6. (optional) Suspected duplicates panel
+      7. (optional) needs_human callout
+      8. Metadata footer table (severity / domain / persona origin)
     """
     parts: list[str] = []
 
     if supersede_header:
         parts.append(quote(supersede_header))
-        parts.append("")  # blank line
+        parts.append("")
 
-    # Body. The persona's `summary_md` already contains the 4 h3. headings.
-    parts.append(triage.summary_md.rstrip())
+    # 1) Symptom
+    parts.append(
+        panel(
+            title="📍 Symptom",
+            body=triage.symptom.rstrip(),
+        )
+    )
+    parts.append("")
 
+    # 2) Evidence
+    parts.append(
+        panel(
+            title="📎 Evidence cited",
+            body=_render_evidence_list(triage.evidence),
+        )
+    )
+    parts.append("")
+
+    # 3) Likely layer — color per domain
+    border, bg = _DOMAIN_COLORS.get(triage.domain, (_NEUTRAL_BORDER, _NEUTRAL_BG))
+    parts.append(
+        panel(
+            title=f"🎯 Likely layer: {triage.domain}",
+            body=triage.layer_rationale.rstrip(),
+            border_color=border,
+            bg_color=bg,
+        )
+    )
+    parts.append("")
+
+    # 4) Next data
+    parts.append(
+        panel(
+            title="🔬 Next data to collect",
+            body=_render_next_data(triage.next_data),
+        )
+    )
+    parts.append("")
+
+    # 5) Suspected duplicates (optional)
     if triage.suspected_duplicates:
+        parts.append(
+            panel(
+                title="🔁 Suspected duplicates (best-effort, NOT verified)",
+                body=_render_duplicates(triage.suspected_duplicates),
+            )
+        )
         parts.append("")
-        parts.append(h3("Suspected duplicates (best-effort, NOT verified)"))
-        for dup in triage.suspected_duplicates:
-            parts.append(bullet(f"{bold(dup.key)} — {dup.basis}"))
 
+    # 6) needs_human callout
     if triage.needs_human:
+        parts.append(quote("⚠️ needs_human=true — operator review required."))
         parts.append("")
-        parts.append(quote("needs_human=true — operator review required."))
+
+    # 7) Metadata footer — Jira renders `||header||header||` as a table.
+    parts.append("----")
+    parts.append("||severity||domain||needs_human||")
+    parts.append(
+        f"|{_SEVERITY_LABELS.get(triage.severity, triage.severity)}"
+        f"|{triage.domain}"
+        f"|{'true' if triage.needs_human else 'false'}|"
+    )
 
     return "\n".join(parts) + "\n"
 
@@ -94,20 +193,41 @@ def supersede_header_text(prior_posted_at_hhmmss_utc: str) -> str:
     )
 
 
-def evidence_bullet(item: EvidenceItem) -> str:
-    """Helper for callers that want to render a single Evidence item.
+# ── Section renderers ───────────────────────────────────────────────────────
 
-    Format: `* <source> @ <citation> — {{<quote>}}`.
-    Long quotes (>200 chars) use `{noformat}` instead of `{{...}}`.
+
+def _render_evidence_list(evidence: tuple[EvidenceItem, ...]) -> str:
+    if not evidence:
+        return bullet("_(no evidence cited — see needs_human flag)_")
+    lines: list[str] = []
+    for item in evidence:
+        lines.append(evidence_bullet(item))
+    return "\n".join(lines)
+
+
+def _render_next_data(items: tuple[str, ...]) -> str:
+    if not items:
+        return bullet("_(no follow-up actions suggested)_")
+    return "\n".join(bullet(item) for item in items)
+
+
+def _render_duplicates(dups: tuple[SuspectedDuplicate, ...]) -> str:
+    return "\n".join(duplicate_bullet(d) for d in dups)
+
+
+def evidence_bullet(item: EvidenceItem) -> str:
+    """Format: `* *<source>* @ <citation> — {{<quote>}}`.
+
+    Long quotes (>200 chars) or multi-line quotes use `{noformat}` to
+    avoid escape headaches.
     """
+    head = f"{bold(item.source)} @ {item.citation}"
     if len(item.quote) > 200 or "\n" in item.quote:
-        body = noformat(item.quote)
-        return f"{bullet(f'{item.source} @ {item.citation} —')}\n{body}"
-    return bullet(f"{item.source} @ {item.citation} — {code(item.quote)}")
+        return f"{bullet(head + ' —')}\n{noformat(item.quote)}"
+    return bullet(f"{head} — {code(item.quote)}")
 
 
 def duplicate_bullet(dup: SuspectedDuplicate) -> str:
-    """Helper for callers that want to render a single suspected duplicate."""
     return bullet(f"{bold(dup.key)} — {dup.basis}")
 
 
@@ -120,6 +240,7 @@ __all__ = [
     "evidence_bullet",
     "h3",
     "noformat",
+    "panel",
     "quote",
     "supersede_header_text",
 ]

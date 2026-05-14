@@ -137,14 +137,21 @@ class SuspectedDuplicate:
 
 @dataclass(frozen=True, slots=True)
 class TriageDraft:
-    """Validated Claude output, ready to ship to Jira."""
+    """Validated Claude output, ready to ship to Jira.
 
-    summary_md: str
+    Structured fields (the handler assembles the actual comment body).
+    See `handlers/jira_triage_schemas.py` for the Pydantic-validated
+    counterpart.
+    """
+
+    symptom: str  # one-sentence
+    evidence: tuple[EvidenceItem, ...]
     domain: Domain
+    layer_rationale: str  # one-sentence why this layer
+    next_data: tuple[str, ...]
     severity: Severity
     suspected_duplicates: tuple[SuspectedDuplicate, ...]
     needs_human: bool
-    evidence: tuple[EvidenceItem, ...]
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,5 +1,9 @@
-"""Pydantic v2 schema for the JSON Claude must produce per
-`specs/002-jira-triage-bot/contracts/claude-triage-output.md` §1.
+"""Pydantic v2 schema for the JSON Claude must produce.
+
+Structured layout (no free-form prose) — the persona fills typed fields
+and the handler assembles a Jira-native, panel-based comment from them.
+This keeps every triage comment visually consistent and lets the
+operator tune layout without re-prompting Claude.
 
 `extra="forbid"` is the load-bearing knob — a hallucinated key like
 `"approve": true` must NOT slip past validation. FR-017 is enforced
@@ -26,6 +30,7 @@ EvidenceSource = Literal[
     "ssh.console",
     "test_code",
     "product_code",
+    "ticket.error_log",
 ]
 
 
@@ -49,16 +54,29 @@ class SuspectedDuplicate(BaseModel):
 
 
 class TriageOutput(BaseModel):
-    """Top-level Claude output — see `claude-triage-output.md` §1."""
+    """Structured Claude output — handler assembles the actual comment body."""
 
     model_config = {"extra": "forbid"}
 
-    summary_md: str = Field(min_length=1, max_length=16_000)
+    # One-sentence summary of what failed. Korean prose, English technical
+    # terms preserved (e.g. "rblnWaitJob TIMEDOUT" stays English).
+    symptom: str = Field(min_length=1, max_length=500)
+
+    evidence: list[EvidenceItem] = Field(default_factory=list, max_length=50)
+
     domain: Domain
+    # One-sentence justification for the chosen domain. Cites the
+    # strongest evidence lines that point at this layer.
+    layer_rationale: str = Field(min_length=1, max_length=500)
+
+    # Bullet list of concrete next-step suggestions (commands, files to
+    # collect, hosts to re-run on). Each item is one short imperative.
+    next_data: list[str] = Field(default_factory=list, max_length=10)
+
     severity: Severity
+
     suspected_duplicates: list[SuspectedDuplicate] = Field(default_factory=list, max_length=5)
     needs_human: bool
-    evidence: list[EvidenceItem] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode="after")
     def evidence_required_when_concluded(self) -> TriageOutput:

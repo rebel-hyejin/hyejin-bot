@@ -273,7 +273,11 @@ async def _build_jira_deps(  # noqa: PLR0912, PLR0915 — composition root branc
                 allow_external=triage_entry.allow_external_ssw_bundle,
             )
 
-        loader = persona_loader or PersonaLoader()
+        # Order of precedence: explicit overrides → reuse pr_review's loader
+        # if both handlers are enabled → default. The first arm catches the
+        # jira-only test path where `pr_review_enabled=False` so the outer
+        # `persona_loader` local stayed None.
+        loader = overrides.persona_loader or persona_loader or PersonaLoader()
         pause_guard = overrides.pause_guard or _make_pause_guard(config)
         triage_deps = JiraTriageDeps(
             jira=jira_client,

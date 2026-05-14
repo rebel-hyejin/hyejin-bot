@@ -406,7 +406,17 @@ def _field_id_by_name(fields: dict[str, Any], target_name: str) -> str:
 
 
 def _adf_to_text(adf: object) -> str:
-    """Best-effort ADF→plain-text. Returns input string if not ADF."""
+    """Best-effort ADF→plain-text. Returns input string if not ADF.
+
+    Two behaviors beyond naive text extraction:
+      1. Surface every link's `href` attr as `<href>` immediately after the
+         display text — otherwise the URL (e.g. `ssh://...` in a Jira
+         markdown link `[Link](ssh://...)`) is lost when the description
+         is ADF-encoded.
+      2. Treat `paragraph` / `hardBreak` / `tableCell` / `tableRow` as
+         newline boundaries — without this, table cell values run
+         together and downstream regexes can't anchor on per-cell content.
+    """
     if adf is None:
         return ""
     if isinstance(adf, str):
@@ -416,17 +426,31 @@ def _adf_to_text(adf: object) -> str:
     adf_typed = cast("dict[str, Any]", adf)
     pieces: list[str] = []
 
-    def _walk(node: object) -> None:
+    def _walk(node: object) -> None:  # noqa: PLR0912 — ADF tree walker, branches are per-node-type
         if isinstance(node, dict):
             node_typed = cast("dict[str, Any]", node)
             if node_typed.get("type") == "text" and isinstance(node_typed.get("text"), str):
                 pieces.append(str(node_typed["text"]))
+                # Surface link href so URL-detecting regexes find it.
+                marks = node_typed.get("marks")
+                if isinstance(marks, list):
+                    for mark in cast("list[Any]", marks):
+                        if not isinstance(mark, dict):
+                            continue
+                        mark_typed = cast("dict[str, Any]", mark)
+                        if mark_typed.get("type") != "link":
+                            continue
+                        attrs = mark_typed.get("attrs")
+                        if not isinstance(attrs, dict):
+                            continue
+                        href = cast("dict[str, Any]", attrs).get("href")
+                        if isinstance(href, str) and href:
+                            pieces.append(f"<{href}>")
             content = node_typed.get("content")
             if isinstance(content, list):
                 for child in cast("list[Any]", content):
                     _walk(child)
-            # Paragraph / hardBreak boundaries add newlines.
-            if node_typed.get("type") in ("paragraph", "hardBreak"):
+            if node_typed.get("type") in ("paragraph", "hardBreak", "tableCell", "tableRow"):
                 pieces.append("\n")
         elif isinstance(node, list):
             for child in cast("list[Any]", node):

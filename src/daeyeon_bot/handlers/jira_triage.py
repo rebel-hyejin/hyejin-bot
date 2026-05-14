@@ -798,16 +798,28 @@ def _parse_payload(event: Event) -> _Payload:
 _BRANCH_WIKI_RE = re.compile(r"\*Branch\*:\s*(?P<v>\S+)", re.IGNORECASE)
 _COMMIT_WIKI_RE = re.compile(r"\*Commit\*:\s*(?P<v>[0-9a-fA-F]{7,40})", re.IGNORECASE)
 
-# Jira markdown-table row in SSWCI Epic descriptions:
-#   | **Commit (Branch)** | [2486620](https://github.com/.../commit/2486620) (dev) |
-# Both branch and commit live in the same row's value cell. Capture the
-# linked SHA from `[<sha>](...)`, skip the markdown URL `(http...)`, then
-# grab the trailing `(branch)` parenthetical.
+# SSWCI Epic descriptions store the Commit / Branch as one table row.
+# Production reads ADF (Atlassian Document Format) and `_adf_to_text`
+# flattens it to per-cell newlines + `<href>` markers for link nodes:
+#
+#   Commit (Branch)
+#   2486620<https://github.com/.../commit/2486620> (dev)
+#
+# The MCP-rendered markdown form (used during dev) is also accepted:
+#
+#   | **Commit (Branch)** | [2486620](https://.../commit/2486620) (dev) |
+#
+# Strategy: anchor on the "Commit (Branch)" label, consume non-hex up to
+# the SHA, then non-paren content up to the trailing `(branch)` group.
+# The branch capture is restricted to letter-prefixed `[\w./-]*` so it
+# can't accidentally swallow a URL host.
 _COMMIT_BRANCH_TABLE_RE = re.compile(
-    r"\*\*Commit\s*\(Branch\)\*\*\s*\|\s*"
-    r"\[(?P<sha>[0-9a-fA-F]{7,40})\]"  # linked SHA
-    r"\([^)]+\)"  # markdown URL — consume it
-    r"\s*\((?P<branch>[^)\s][^)]*?)\)",  # trailing (branch)
+    r"Commit\s*\(Branch\)"  # label cell
+    r"[^a-fA-F0-9]*?"  # whitespace / newlines / cell delimiters
+    r"(?P<sha>[0-9a-fA-F]{7,40})\b"  # SHA
+    r"[^()]*?"  # consume `<href>`, spaces, etc.
+    r"\((?P<branch>[a-zA-Z][\w./-]*)\)",  # trailing (branch)
+    re.DOTALL,
 )
 
 

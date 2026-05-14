@@ -230,7 +230,10 @@ allow_external_ssw_bundle = true
     posted = jira.posted_comments()
     assert len(posted) == 1
     assert posted[0].key == "SSWCI-9999"
-    assert "Symptom" in posted[0].body_wiki
+    assert "h3. Summary" in posted[0].body_wiki
+    assert "h3. Evidences" in posted[0].body_wiki
+    assert "h3. Analysis" in posted[0].body_wiki
+    assert "h3. Action Items" in posted[0].body_wiki
 
     # Audit row landed with status='posted'.
     async with storage.connection(db_path) as conn:

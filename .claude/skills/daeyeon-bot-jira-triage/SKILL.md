@@ -140,7 +140,7 @@ UMD 증상 → 원인 backtracking 표:
 
 핸들러는 system prompt 끝에 정확한 JSON 스키마를 부착한다. 그 스키마와 일치하는 단일 JSON object만 출력한다 — prose 없음, markdown code fence 없음.
 
-**구조화된 필드 — 핸들러가 Jira-native panel 레이아웃으로 조립한다**. 자유 형식 markdown 섹션을 직접 짜지 않는다.
+**구조화된 필드 — 핸들러가 4-섹션 writeup 레이아웃으로 조립한다** (Summary / Evidences / Analysis / Action Items). 자유 형식 markdown 섹션을 직접 짜지 않는다. 또한 핸들러가 evidence quote 주변 ±5 라인을 자동으로 `{expand}` 블록으로 붙여서 본문 줄 수와 별개로 raw 컨텍스트가 verification용으로 제공된다 — quote는 **그대로 인용**만 신경쓰면 됨.
 
 요지:
 
@@ -157,16 +157,20 @@ UMD 증상 → 원인 backtracking 표:
 }
 ```
 
-필드별 가이드:
+필드별 가이드 — 댓글 4 섹션과 매핑:
 
-- **`symptom`** — 한 문장. 관측된 증상만. UMD 에러라면 "(symptom임을 명시)" — 예: `"rblnWaitJob ABORTED는 증상이며 root는 FW abort"`. 분석·예측·권고 금지.
-- **`evidence`** — 결론을 뒷받침하는 인용. 각 항목은 (source, quote, citation) 삼중. `domain != "unknown"`일 때 비어 있을 수 없다.
-- **`domain`** — Domain Classification ENUM. 자유 형식 금지.
-- **`layer_rationale`** — 한 문장. *왜* 이 layer인지 — 어떤 evidence 라인이 이 layer를 가리키는지 짚는다. backtracking 표 결과 명시.
-- **`next_data`** — 짧은 명령형 리스트. 최대 10개. 예: `["FW abort dump 캡처", "rblntrace로 재현 후 guilty command_id 식별", "같은 commit 다른 host에서 재현 여부 확인"]`. 운영자가 다음에 무엇을 해야 하는지를 단답으로 보여준다.
-- **`severity`** — Hard signal 룰 (아래) 적용.
-- **`suspected_duplicates`** — 최대 5개. 자신 없으면 빈 배열.
-- **`needs_human`** — `true` 트리거는 아래 참조.
+- **`symptom`** → **h3. Summary** (한 문장. 관측된 증상만. UMD 에러라면 "(symptom임을 명시)" — 예: `"rblnWaitJob ABORTED는 증상이며 root는 FW abort"`. 분석·예측·권고 금지.)
+- **`evidence`** → **h3. Evidences** + **h3. Analysis** — source에 따라 두 섹션에 자동 분배:
+  - log/ssh 출처 (`ticket.error_log`, `loki.*`, `ssh.*`) → **Evidences** 섹션
+  - 코드 출처 (`test_code`, `product_code`) → **Analysis** 섹션
+  - 각 항목은 (source, quote, citation) 삼중. `domain != "unknown"`일 때 비어 있을 수 없다.
+  - **`test_code`가 user message에서 populated인 상태이면 (즉, `(not located in suites tree)`가 아니면) Analysis 섹션에 최소 1개 `test_code` citation을 포함한다** — TC가 어떤 단언/구조를 검증하다 실패했는지 짚는 한 줄.
+- **`domain`** → status badge + Analysis 헤더. Domain Classification ENUM. 자유 형식 금지.
+- **`layer_rationale`** → **h3. Analysis** 본문 (1-3 문장 한국어 한 단락). *왜* 이 layer인지 — 어떤 evidence 라인이 이 layer를 가리키는지 짚는다. backtracking 표 결과 명시. 가능하면 `test_code`/`product_code` evidence를 본문 안에서도 짚어준다.
+- **`next_data`** → **h3. Action Items** (짧은 명령형 리스트. 최대 10개. 예: `["FW abort dump 캡처", "rblntrace로 재현 후 guilty command_id 식별", "같은 commit 다른 host에서 재현 여부 확인"]`. 운영자가 다음에 무엇을 해야 하는지를 단답으로 보여준다.)
+- **`severity`** → status badge. Hard signal 룰 (아래) 적용.
+- **`suspected_duplicates`** → 본문 끝 보조 섹션. 최대 5개. 자신 없으면 빈 배열.
+- **`needs_human`** → status badge. `true` 트리거는 아래 참조.
 
 **`evidence` 배열 룰**:
 - `domain != "unknown"`이면 `evidence`는 비어 있을 수 없다 (Pydantic이 막는다).

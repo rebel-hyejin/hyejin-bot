@@ -235,7 +235,7 @@ class JiraTriageHandler:
 
     # ── Inner pipeline ─────────────────────────────────────────────────────
 
-    async def _handle_inner(  # noqa: PLR0911 — multi-stage pipeline; each branch is documented in §4
+    async def _handle_inner(  # noqa: PLR0911, PLR0915 — multi-stage pipeline; each branch documented in §4
         self, event: Event, ctx: HandlerContext
     ) -> HandlerResult:
         await self.pause_guard()
@@ -426,8 +426,11 @@ class JiraTriageHandler:
         # (k) verify quotes; (l) redact; (m) build comment; (n) post.
         _verify_evidence_quotes(triage, snapshot)
         _enforce_redaction(triage)
+        attachments = jira_markup.build_log_attachments(snapshot, triage)
+        _enforce_attachment_redaction(attachments)
         body_wiki = _build_body(
             triage=triage,
+            attachments=attachments,
             force_supersede=payload.force and prior is not None and prior.status == "posted",
             prior=prior,
         )
@@ -1009,6 +1012,7 @@ def _iter_prose_fields(triage: TriageDraft) -> Iterator[tuple[str, str]]:
 def _build_body(
     *,
     triage: TriageDraft,
+    attachments: jira_markup.LogAttachments,
     force_supersede: bool,
     prior: AuditRow | None,
 ) -> str:
@@ -1017,7 +1021,29 @@ def _build_body(
     if force_supersede and prior is not None and prior.posted_at is not None:
         ts = prior.posted_at.astimezone(UTC).strftime("%H:%M:%S UTC")
         supersede_header = jira_markup.supersede_header_text(ts)
-    return jira_markup.build_comment(triage, supersede_header=supersede_header)
+    return jira_markup.build_comment(
+        triage, attachments=attachments, supersede_header=supersede_header
+    )
+
+
+def _enforce_attachment_redaction(attachments: jira_markup.LogAttachments) -> None:
+    """Named-secret guard for log excerpt blocks (FR-015 §3).
+
+    Mirrors the PR-review two-tier policy: a Slack / AWS / JWT / Anthropic /
+    GitHub-PAT match in a raw log line is a real secret leaking through our
+    fetch path; refuse to post (DLQ). Entropy-only matches (long hex strings,
+    UUIDs, hashes) are common in dmesg / FW logs and would generate too many
+    false positives, so we leave them alone.
+    """
+    for label, block in attachments.expand_blocks.items():
+        _, spans = redact_with_provenance(block)
+        named = [(s, e, r) for s, e, r in spans if r != "entropy"]
+        if named:
+            reasons = sorted({r for _, _, r in named})
+            raise PermanentError(
+                f"jira_triage: redaction would alter posted log excerpt ({label});"
+                f" reasons={reasons}"
+            )
 
 
 _RENDER_LINE_CAP = 200  # max lines per stream to include in user message

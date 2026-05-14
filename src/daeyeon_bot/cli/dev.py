@@ -263,6 +263,100 @@ async def _fire_pr_review(*, pr: str, force: bool, dry_run: bool, config_path: s
     typer.echo(event.id)
 
 
+_JIRA_ISSUE_RE = re.compile(r"^(?P<key>[A-Z]+-\d+)$")
+_JIRA_URL_RE = re.compile(r"^https?://[^/]+/browse/(?P<key>[A-Z]+-\d+)/?$")
+
+
+def _parse_issue_key(ref: str) -> str:
+    """Parse `SSWCI-NNNN` or `https://<jira>/browse/SSWCI-NNNN`."""
+    m = _JIRA_ISSUE_RE.match(ref) or _JIRA_URL_RE.match(ref)
+    if m is None:
+        raise typer.BadParameter(
+            "issue ref must be 'PROJECT-N' (e.g. 'SSWCI-16787') or a /browse/ URL"
+        )
+    return m["key"]
+
+
+@app.command(
+    "fire-jira-triage",
+    help="Enqueue a manual jira_triage event. Same audit-row dedup as the auto path.",
+)
+def fire_jira_triage(
+    issue: str = typer.Option(
+        ..., "--issue", help="Issue key (e.g. 'SSWCI-16787') or /browse/ URL."
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Re-triage even when an audit row already exists; appends supersede header.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the event JSON instead of writing it."
+    ),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    asyncio.run(_fire_jira_triage(issue=issue, force=force, dry_run=dry_run, config_path=config))
+
+
+async def _fire_jira_triage(
+    *, issue: str, force: bool, dry_run: bool, config_path: str | None
+) -> None:
+    """Build a `jira.triage.manual` event and enqueue it via the outbox."""
+    issue_key = _parse_issue_key(issue)
+    cfg = load(config_path)
+    cfg.state_dir_path.mkdir(parents=True, exist_ok=True)
+
+    routing = cfg.routing.get("jira.triage.manual", [])
+    if not routing:
+        raise typer.BadParameter(
+            "no handlers configured for 'jira.triage.manual'. Edit config.toml's [routing] section."
+        )
+
+    if force:
+        comment_seq = f"manual_{int(time.time())}"
+    else:
+        comment_seq = "1"
+    payload: dict[str, object] = {
+        "issue_key": issue_key,
+        "force": force,
+        "comment_seq": comment_seq,
+    }
+    dedup_seed = f"manual-jira-triage|{issue_key}|{comment_seq}"
+    dedup_key = hashlib.sha256(dedup_seed.encode("utf-8")).hexdigest()
+
+    now = datetime.now(tz=UTC)
+    event = make_event(type="jira.triage.manual", payload=payload, created_at=now)
+
+    if dry_run:
+        typer.echo(
+            json.dumps(
+                {
+                    "event_id": event.id,
+                    "type": event.type,
+                    "payload": payload,
+                    "source_dedup_key": dedup_key,
+                    "routes_to": routing,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    async with storage.connection(cfg.db_path) as conn:
+        await storage.apply_migrations(conn)
+        ok = await outbox.insert_event(
+            conn, event, source="jira_triage_manual", source_dedup_key=dedup_key
+        )
+        if not ok:
+            typer.echo("duplicate dedup key — an identical event is already queued", err=True)
+            raise typer.Exit(code=1)
+        for handler in routing:
+            await outbox.enqueue_handler(conn, event_id=event.id, handler=handler, now=now)
+        await conn.commit()
+    typer.echo(event.id)
+
+
 @app.command("repl", help="Drop into IPython with the production container bound.")
 def repl() -> None:
     raise NotImplementedError("Phase 3+: IPython.embed with container in scope")

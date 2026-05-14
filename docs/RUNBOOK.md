@@ -424,6 +424,107 @@ rotate it on github.com/settings/tokens before refreshing locally.
 
 ---
 
+## 4b. Jira triage (feature 002)
+
+The `jira_triage` handler posts a Claude-authored triage comment to a
+Jira regression-failure ticket when the operator (or the DevOps Team)
+is assigned to it. The `jira_assigned` polling trigger watches every
+`[triggers.jira_assigned].poll_interval_seconds` (default 300s) for
+new assignments in the configured `[handlers.jira_triage].allowed_projects`
+(default `["SSWCI"]`).
+
+The handler reproduces the run's source state in a project-local
+ssw-bundle clone (`var/ssw-bundle/`), pulls Loki streams + RF artifacts
+via SSH, then synthesizes a comment via the persona at
+`~/.claude/skills/daeyeon-bot-jira-triage/SKILL.md` (or the repo-bundled
+fallback `.claude/skills/daeyeon-bot-jira-triage/SKILL.md`).
+
+### Enable
+
+```bash
+# 1. Generate a Jira API token at id.atlassian.com/manage-profile/security/api-tokens
+# 2. Store JIRA_USER + JIRA_API_TOKEN (and the SSW SSH password) in the secrets provider.
+daeyeon-bot setup-token jira-user           # Atlassian email
+daeyeon-bot setup-token jira-api-token      # API token
+daeyeon-bot setup-token ssw-automation-password
+# 3. Flip the config and restart.
+sed -i 's/^enabled = false  *# triggers.jira/enabled = true/' ~/.daeyeon-bot/config.toml
+systemctl --user restart daeyeon-bot
+```
+
+### Operate
+
+```bash
+# Audit history (last 20 across all issues):
+daeyeon-bot inspect jira-triage
+
+# One issue's history (newest first):
+daeyeon-bot inspect jira-triage --issue SSWCI-16787
+
+# Manual triage (e.g. for a ticket assigned before the daemon's birth — see
+# FR-004a cold-start guard which suppresses retroactive triage):
+daeyeon-bot dev fire-jira-triage --issue SSWCI-16787
+
+# Force re-triage on an already-triaged ticket. Posts a fresh comment with
+# `{quote}Updated triage (supersedes earlier ...){quote}` header. The
+# prior comment_id moves into `superseded_comment_ids`.
+daeyeon-bot dev fire-jira-triage --issue SSWCI-16787 --force
+```
+
+### Incident playbook — `JIRA_API_TOKEN` expired
+
+**Symptom**
+
+- Daemon exits 78 shortly after enabling `jira_triage`, or quickly after
+  any `jira` HTTP call.
+- `journalctl --user -u daeyeon-bot` shows an `AuthError` line with
+  `HTTP 401` or `HTTP 403`.
+
+**Diagnose**
+
+```bash
+daeyeon-bot ops doctor          # token check reports `fail` for JIRA_API_TOKEN
+```
+
+**Fix**
+
+1. Generate a fresh token at `https://id.atlassian.com/manage-profile/security/api-tokens`.
+2. Re-run `daeyeon-bot setup-token jira-api-token`.
+3. `systemctl --user restart daeyeon-bot` (or kick launchd on macOS).
+4. Confirm with `daeyeon-bot ops doctor` and tail the log.
+
+### Long-term: SSH key migration for `SSW_AUTOMATION_PASSWORD`
+
+The bot today SSHes to test hosts as `automation` with a shared password
+(literally `automation`) and registers it with the structlog literal-secret
+redactor so logs don't leak it. This is a lab-grade credential and should
+be replaced.
+
+Migration plan (out of scope for v1, tracked here):
+
+1. Generate `~/.daeyeon-bot/ssh/id_ed25519` (no passphrase or a passphrase
+   stored under `SSW_AUTOMATION_KEY_PASSPHRASE`).
+2. Distribute the public key to every test host under `automation`'s
+   `~/.ssh/authorized_keys` (typically via the test-host provisioning
+   pipeline).
+3. Extend `infra/ssh_logs.py` to prefer key auth when a private key is
+   present, fall back to password while migrating.
+4. Once all hosts are migrated, retire `SSW_AUTOMATION_PASSWORD` from
+   secrets and remove the literal-redaction registration.
+
+### Common skips
+
+The audit row's `status` column tells you why a triage didn't post:
+
+| Status | Meaning |
+|---|---|
+| `skipped_not_regression_failure` | Title didn't match `regression-test . <host> . <TC>` regex (defense-in-depth even when JQL admitted the ticket). |
+| `skipped_missing_metadata` | Parent Epic missing `Branch` and/or `Commit` custom field. `audit.missing_fields` lists which. Backfill the Epic and `--force` to retry. |
+| `skipped_unresolvable_commit` | Epic's commit SHA isn't reachable on the ssw-bundle remote (force-pushed, garbage-collected). Fix the Epic or skip. |
+| `skipped_submodule_failure` | `git submodule update --init --recursive` failed for one or more paths (listed in `audit.missing_fields`). Usually network/auth on the submodule's remote. |
+| `skipped_already_triaged` | An audit row with `status='posted'` already exists for this issue. Use `--force` to supersede. |
+| `failed` | Persona unavailable, redaction would alter content, fabricated evidence quote, or any other DeadLetter condition. `audit.error` has details; events go to `dead_letter` for `daeyeon-bot ops replay`. |
+
 ## 5. When in doubt
 
 - `daeyeon-bot ops doctor` is the single best diagnostic.

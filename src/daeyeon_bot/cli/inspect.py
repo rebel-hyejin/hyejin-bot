@@ -13,8 +13,9 @@ from daeyeon_bot.app import ratelimit as ratelimit_mod
 from daeyeon_bot.app.config import Config, load
 from daeyeon_bot.app.registry import build_handler_registry
 from daeyeon_bot.app.supervisor import list_quarantined, unquarantine
+from daeyeon_bot.core.jira_triage.audit import AuditRow as JiraAuditRow
 from daeyeon_bot.core.pr_review.audit import AuditRow
-from daeyeon_bot.infra import pr_review_audit, queries, storage
+from daeyeon_bot.infra import jira_triage_audit, pr_review_audit, queries, storage
 
 app = typer.Typer(help="Inspect runtime state and history.", no_args_is_help=True)
 
@@ -274,6 +275,70 @@ def _format_audit_row(row: AuditRow) -> str:
     return (
         f"{when}  {row.repo}#{row.pr_number}@{row.head_sha[:8]}"
         f"  status={row.status}  {review}  persona={persona}{chain}{err}"
+    )
+
+
+@app.command(
+    "jira-triage",
+    help=(
+        "Show jira_triage audit history. With no flags: most recent 20 rows."
+        " With --issue SSWCI-NNNN: that issue's history (newest first)."
+    ),
+)
+def jira_triage(
+    issue: str | None = typer.Option(
+        None,
+        "--issue",
+        help="Filter to one issue key (e.g. 'SSWCI-16787').",
+    ),
+    n: int = typer.Option(20, "--n", help="Number of rows when --issue is omitted (default 20)."),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    if issue is None:
+        rows = asyncio.run(_jira_triage_recent(limit=n, config_path=config))
+        if not rows:
+            typer.echo("(no audit rows)")
+            return
+        for row in rows:
+            typer.echo(_format_jira_audit_row(row))
+        return
+    rows = asyncio.run(_jira_triage_for(issue_key=issue, config_path=config))
+    if not rows:
+        typer.echo(f"(no audit rows for {issue})")
+        return
+    typer.echo(f"Issue {issue}:")
+    for row in rows:
+        typer.echo("  " + _format_jira_audit_row(row))
+
+
+async def _jira_triage_recent(*, limit: int, config_path: str | None) -> list[JiraAuditRow]:
+    cfg = load(config_path)
+    async with storage.connection(cfg.db_path) as conn:
+        await storage.apply_migrations(conn)
+        return await jira_triage_audit.list_recent(conn, limit=limit)
+
+
+async def _jira_triage_for(*, issue_key: str, config_path: str | None) -> list[JiraAuditRow]:
+    cfg = load(config_path)
+    async with storage.connection(cfg.db_path) as conn:
+        await storage.apply_migrations(conn)
+        return await jira_triage_audit.list_for_issue(conn, issue_key=issue_key)
+
+
+def _format_jira_audit_row(row: JiraAuditRow) -> str:
+    when = (row.posted_at or row.created_at).isoformat()
+    comment = f"comment={row.comment_id}" if row.comment_id else "comment=-"
+    persona = row.persona_skill or "-"
+    chain = f" supersedes={list(row.superseded_comment_ids)}" if row.superseded_comment_ids else ""
+    domain = row.domain or "-"
+    sev = row.severity or "-"
+    loki = f" loki_err={row.loki_error}" if row.loki_error else ""
+    ssh = f" ssh_err={row.ssh_error}" if row.ssh_error else ""
+    missing = f" missing={list(row.missing_fields)}" if row.missing_fields else ""
+    err = f" err={row.error}" if row.error else ""
+    return (
+        f"{when}  {row.issue_key}  status={row.status}  domain={domain}  sev={sev}"
+        f"  {comment}  persona={persona}{chain}{loki}{ssh}{missing}{err}"
     )
 
 

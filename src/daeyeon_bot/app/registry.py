@@ -15,16 +15,21 @@ from daeyeon_bot.app.config import (
     Config,
     GhReviewRequestedTriggerEntry,
     HandlerEntry,
+    JiraAssignedTriggerEntry,
+    JiraTriageHandlerEntry,
     PrReviewHandlerEntry,
 )
 from daeyeon_bot.core.errors import ConfigError
 from daeyeon_bot.core.manifest import HandlerManifest, TriggerManifest
 from daeyeon_bot.core.time import Clock
 from daeyeon_bot.handlers import echo as echo_handler
+from daeyeon_bot.handlers import jira_triage as jira_triage_handler
 from daeyeon_bot.handlers import pr_review as pr_review_handler
 from daeyeon_bot.handlers.pr_review import PauseGuard
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from daeyeon_bot.infra.jira_client import FieldDiscovery, JiraIdentity
+from daeyeon_bot.infra.persona_loader import PersonaLoader
 from daeyeon_bot.triggers import gh_review_requested as gh_review_requested_trigger
+from daeyeon_bot.triggers import jira_assigned as jira_assigned_trigger
 from daeyeon_bot.triggers.gh_review_requested import StorageFactory
 
 
@@ -35,6 +40,26 @@ class HandlerRecord:
     name: str
     manifest: HandlerManifest
     instance: object  # actual Handler — typing.Protocol does not enforce at runtime here.
+
+
+@dataclass(frozen=True, slots=True)
+class JiraTriageDeps:
+    """Runtime dependencies the `jira_triage` handler can't fabricate itself.
+
+    Inspection-only callers omit these; the registry skips the handler in
+    that case (mirrors PrReviewDeps).
+    """
+
+    jira: Any
+    loki: Any
+    ssh: Any
+    ssw_bundle: Any
+    host_resolver_factory: Callable[[], Any]
+    persona_loader: PersonaLoader
+    db: Any
+    jira_identity: JiraIdentity
+    field_discovery: FieldDiscovery
+    pause_guard: PauseGuard | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,14 +119,14 @@ def build_handler_registry(
     config: Config,
     *,
     pr_review_deps: PrReviewDeps | None = None,
+    jira_triage_deps: JiraTriageDeps | None = None,
 ) -> HandlerRegistry:
     """Instantiate enabled handlers from config, applying manifest overrides.
 
-    `pr_review_deps` is required only when `[handlers.pr_review].enabled = true`
-    AND the caller intends to actually dispatch (i.e. via the container). For
-    inspection-only paths the dep is None and `pr_review` is silently skipped;
-    `daeyeon-bot doctor` is the canonical liveness probe that exercises the
-    full wiring.
+    `pr_review_deps` / `jira_triage_deps` are required only when the
+    corresponding handler is `enabled = true` AND the caller intends to
+    actually dispatch (i.e. via the container). For inspection-only
+    paths the dep is None and the handler is silently skipped.
     """
     registry = HandlerRegistry(routing=dict(config.routing))
 
@@ -110,7 +135,15 @@ def build_handler_registry(
             continue
         if name == "pr_review" and pr_review_deps is None:
             continue
-        record = instantiate_handler(name, entry, pr_review_deps=pr_review_deps)
+        if name == "jira_triage" and jira_triage_deps is None:
+            continue
+        record = instantiate_handler(
+            name,
+            entry,
+            config=config,
+            pr_review_deps=pr_review_deps,
+            jira_triage_deps=jira_triage_deps,
+        )
         registry.register(record)
 
     return registry
@@ -120,7 +153,9 @@ def instantiate_handler(
     name: str,
     entry: HandlerEntry,
     *,
+    config: Config | None = None,
     pr_review_deps: PrReviewDeps | None = None,
+    jira_triage_deps: JiraTriageDeps | None = None,
 ) -> HandlerRecord:
     if name == "echo":
         manifest = _override_manifest(echo_handler.MANIFEST, entry)
@@ -150,6 +185,39 @@ def instantiate_handler(
             kwargs["pause_guard"] = pr_review_deps.pause_guard
         instance = pr_review_handler.PrReviewHandler(**kwargs)
         return HandlerRecord(name=name, manifest=manifest, instance=instance)
+    if name == "jira_triage":
+        if jira_triage_deps is None:
+            raise ConfigError(
+                "jira_triage handler requires JiraTriageDeps; build via container.build()"
+            )
+        if config is None:
+            raise ConfigError(
+                "jira_triage handler requires config (for LokiConfig); pass via build_handler_registry"
+            )
+        jira_entry = (
+            entry
+            if isinstance(entry, JiraTriageHandlerEntry)
+            else JiraTriageHandlerEntry.model_validate(entry.model_dump())
+        )
+        manifest = _override_manifest(jira_triage_handler.MANIFEST, jira_entry)
+        jt_kwargs: dict[str, Any] = {
+            "manifest": manifest,
+            "jira": jira_triage_deps.jira,
+            "loki": jira_triage_deps.loki,
+            "ssh": jira_triage_deps.ssh,
+            "ssw_bundle": jira_triage_deps.ssw_bundle,
+            "host_resolver_factory": jira_triage_deps.host_resolver_factory,
+            "persona_loader": jira_triage_deps.persona_loader,
+            "config": jira_entry,
+            "loki_config": config.loki,
+            "db": jira_triage_deps.db,
+            "jira_identity": jira_triage_deps.jira_identity,
+            "field_discovery": jira_triage_deps.field_discovery,
+        }
+        if jira_triage_deps.pause_guard is not None:
+            jt_kwargs["pause_guard"] = jira_triage_deps.pause_guard
+        instance = jira_triage_handler.JiraTriageHandler(**jt_kwargs)
+        return HandlerRecord(name=name, manifest=manifest, instance=instance)
     raise ConfigError(f"unknown handler in config: {name!r}")
 
 
@@ -160,6 +228,26 @@ class TriggerRecord:
     name: str
     manifest: TriggerManifest
     instance: object  # actual Trigger — Protocol does not enforce at runtime.
+
+
+@dataclass(frozen=True, slots=True)
+class JiraAssignedDeps:
+    """Runtime deps for the `jira_assigned` polling trigger.
+
+    Mirrors GhReviewRequestedDeps. `jira` is a JiraClient or FakeJira;
+    `jira_account_id` is `JiraIdentity.account_id` (resolved at boot);
+    `issuetype_name` + `team_field_id` come from FieldDiscovery (also
+    resolved at boot).
+    """
+
+    jira: Any
+    storage_factory: jira_assigned_trigger.StorageFactory
+    jira_account_id: str
+    issuetype_name: str
+    team_field_id: str
+    clock: Clock
+    pause_check: Callable[[], bool]
+    permanent_failure_reporter: jira_assigned_trigger.PermanentFailureReporter
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,24 +276,23 @@ def build_trigger_registry(
     config: Config,
     *,
     gh_review_requested_deps: GhReviewRequestedDeps | None = None,
+    jira_assigned_deps: JiraAssignedDeps | None = None,
 ) -> list[TriggerRecord]:
-    """Instantiate enabled live triggers from `config.triggers`.
-
-    Triggers without an `enabled = true` entry are skipped silently.
-    Inspection-only callers omit `gh_review_requested_deps`; the registry
-    skips the trigger in that case (mirroring `pr_review` handler behavior).
-    """
+    """Instantiate enabled live triggers from `config.triggers`."""
     out: list[TriggerRecord] = []
     for name, entry in config.triggers.items():
         if not entry.enabled:
             continue
         if name == "gh_review_requested" and gh_review_requested_deps is None:
             continue
+        if name == "jira_assigned" and jira_assigned_deps is None:
+            continue
         record = instantiate_trigger(
             name,
             entry,
             config=config,
             gh_review_requested_deps=gh_review_requested_deps,
+            jira_assigned_deps=jira_assigned_deps,
         )
         if record is not None:
             out.append(record)
@@ -218,6 +305,7 @@ def instantiate_trigger(
     *,
     config: Config,
     gh_review_requested_deps: GhReviewRequestedDeps | None = None,
+    jira_assigned_deps: JiraAssignedDeps | None = None,
 ) -> TriggerRecord | None:
     if name == "manual":
         # `manual` has no live loop — events arrive via the CLI. Skip.
@@ -253,6 +341,36 @@ def instantiate_trigger(
         return TriggerRecord(
             name=name,
             manifest=gh_review_requested_trigger.MANIFEST,
+            instance=instance,
+        )
+    if name == "jira_assigned":
+        if jira_assigned_deps is None:
+            raise ConfigError(
+                "jira_assigned trigger requires JiraAssignedDeps; build via container.build()"
+            )
+        ja_entry = (
+            entry
+            if isinstance(entry, JiraAssignedTriggerEntry)
+            else config.jira_assigned_trigger_entry()
+        )
+        jt_entry = config.jira_triage_handler_entry()
+        instance = jira_assigned_trigger.JiraAssignedTrigger(
+            jira=jira_assigned_deps.jira,
+            storage_factory=jira_assigned_deps.storage_factory,
+            jira_account_id=jira_assigned_deps.jira_account_id,
+            allowed_projects=tuple(jt_entry.allowed_projects),
+            team_name=ja_entry.team_name,
+            team_field_id=jira_assigned_deps.team_field_id,
+            issuetype_name=jira_assigned_deps.issuetype_name,
+            poll_interval_seconds=float(ja_entry.poll_interval_seconds),
+            max_per_cycle=ja_entry.max_per_cycle,
+            clock=jira_assigned_deps.clock,
+            pause_check=jira_assigned_deps.pause_check,
+            permanent_failure_reporter=jira_assigned_deps.permanent_failure_reporter,
+        )
+        return TriggerRecord(
+            name=name,
+            manifest=jira_assigned_trigger.MANIFEST,
             instance=instance,
         )
     raise ConfigError(f"unknown trigger in config: {name!r}")

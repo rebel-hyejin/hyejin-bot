@@ -102,11 +102,13 @@ class FakeJiraClient:
         self._issues.pop(key, None)
 
     def update_assignee(self, key: str, account_id: str | None) -> None:
-        if key in self._issues:
-            issue = self._issues[key]
-            self._issues[key] = _FakeIssue(
-                **{**issue.__dict__, "assignee_account_id": account_id}  # type: ignore[arg-type]
-            )
+        issue = self._issues.get(key)
+        if issue is None:
+            return
+        # _FakeIssue uses `slots=True` so no __dict__; copy via dataclasses.replace.
+        from dataclasses import replace as _replace
+
+        self._issues[key] = _replace(issue, assignee_account_id=account_id)
 
     def posted_comments(self) -> list[_FakeComment]:
         return list(self._posted)

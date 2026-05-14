@@ -9,9 +9,16 @@
 ## Status
 
 Phases 0–7 implemented (vertical slice → reliability → operability → real
-SDK + secrets → deployment → hardening → GitHub PR-review bot). Built-in
-triggers: `manual`, `gh_review_requested`. Built-in handlers: `echo`,
-`pr_review`. Other workloads are added one trigger/handler at a time.
+SDK + secrets → deployment → hardening → GitHub PR-review bot → Jira
+regression-failure triage bot). Built-in triggers: `manual`,
+`gh_review_requested`, `jira_assigned`. Built-in handlers: `echo`,
+`pr_review`, `jira_triage`. Other workloads are added one trigger/handler
+at a time.
+
+| Feature | Spec | Quickstart |
+|---|---|---|
+| GitHub PR review bot | [`specs/001-github-pr-review-bot/`](specs/001-github-pr-review-bot/) | [`quickstart.md`](specs/001-github-pr-review-bot/quickstart.md) |
+| Jira regression triage bot | [`specs/002-jira-triage-bot/`](specs/002-jira-triage-bot/) | [`quickstart.md`](specs/002-jira-triage-bot/quickstart.md) |
 
 | Doc | Purpose |
 |---|---|

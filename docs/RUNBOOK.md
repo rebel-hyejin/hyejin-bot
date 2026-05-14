@@ -443,10 +443,12 @@ fallback `.claude/skills/daeyeon-bot-jira-triage/SKILL.md`).
 
 ```bash
 # 1. Generate a Jira API token at id.atlassian.com/manage-profile/security/api-tokens
-# 2. Store JIRA_USER + JIRA_API_TOKEN (and the SSW SSH password) in the secrets provider.
-daeyeon-bot setup-token jira-user           # Atlassian email
-daeyeon-bot setup-token jira-api-token      # API token
-daeyeon-bot setup-token ssw-automation-password
+# 2. Stash three named secrets via the configured `[secrets].provider`.
+#    Prompts for each value (hidden). Snake-case names — these are the literal
+#    keys the daemon passes to `secrets_provider.load_secret(name)`.
+daeyeon-bot lifecycle setup-secret jira_user            # Atlassian email
+daeyeon-bot lifecycle setup-secret jira_api_token       # API token (ATATT...)
+daeyeon-bot lifecycle setup-secret ssw_automation_password
 # 3. Flip the config and restart.
 sed -i 's/^enabled = false  *# triggers.jira/enabled = true/' ~/.daeyeon-bot/config.toml
 systemctl --user restart daeyeon-bot

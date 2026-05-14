@@ -75,16 +75,16 @@ contract and a richer example.
 ```bash
 # Jira email (used as basic-auth username; matches the convention in
 # ssw-bundle/inv/test_report/jira_client.py):
-uv run daeyeon-bot setup-token jira-user
+uv run daeyeon-bot lifecycle setup-secret jira_user
 # (prompts for your Atlassian email; writes to macOS Keychain or 0600 file
-#  depending on platform)
+#  depending on `[secrets].provider`)
 
 # Jira API token:
-uv run daeyeon-bot setup-token jira-api-token
+uv run daeyeon-bot lifecycle setup-secret jira_api_token
 # (prompts for the token from id.atlassian.com)
 
 # Shared SSH password for test hosts:
-uv run daeyeon-bot setup-token ssw-automation-password
+uv run daeyeon-bot lifecycle setup-secret ssw_automation_password
 # (prompts; for now it's literally "automation" — long-term plan is key auth)
 ```
 

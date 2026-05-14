@@ -608,10 +608,12 @@ class JiraTriageHandler:
                     f"{user_message}\n\n---\nYour previous response failed validation:"
                     f"\n{last_error}\nFix and return ONLY a valid JSON object."
                 )
-            # `ClaudeSession.query(prompt, system=...)` is the protocol method.
-            text_obj: object = await session.query(  # type: ignore[attr-defined]
-                prompt, system=system_prompt
-            )
+            # ClaudeSession is an async context manager — RealClaudeSession
+            # spawns the SDK subprocess on __aenter__ and reaps it on __aexit__.
+            async with session as s:  # type: ignore[attr-defined]
+                text_obj: object = await s.query(  # type: ignore[attr-defined]
+                    prompt, system=system_prompt
+                )
             text: str = text_obj if isinstance(text_obj, str) else str(text_obj)  # type: ignore[arg-type]
             try:
                 data = json.loads(_strip_code_fence(text))

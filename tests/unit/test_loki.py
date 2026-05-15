@@ -29,17 +29,19 @@ def _window() -> tuple[datetime, datetime]:
 # ── Query builder ────────────────────────────────────────────────────────────
 
 
-def test_builder_fwlog_uses_ip_label() -> None:
-    out = LokiQueryBuilder.fwlog_for(host_ip="10.0.0.5", tc_name="TC-0033-x")
-    assert 'hostname="10.0.0.5"' in out
-    assert 'test_name="TC-0033-x"' in out
-    assert 'job="regression-fwlog"' in out
+def test_builder_fwlog_filters_kernel_for_rbln_fwi() -> None:
+    """FW logs come through the kernel logtype with `[rbln-fwi]` content prefix."""
+    out = LokiQueryBuilder.fwlog_for(host_name="ssw-smci-14")
+    assert 'hostname="ssw-smci-14"' in out
+    assert 'logtype="kernel"' in out
+    assert '|= "[rbln-fwi]"' in out
 
 
-def test_builder_smclog_uses_ip_label() -> None:
-    out = LokiQueryBuilder.smclog_for(host_ip="10.0.0.5", tc_name="TC-0033-x")
-    assert 'job="regression-smclog"' in out
-    assert 'hostname="10.0.0.5"' in out
+def test_builder_smclog_uses_bmc_hostname_suffix() -> None:
+    """BMC SEL streams live under `<host>-bmc` hostname."""
+    out = LokiQueryBuilder.smclog_for(host_name="ssw-smci-14")
+    assert 'hostname="ssw-smci-14-bmc"' in out
+    assert 'logtype="bmc-sel"' in out
 
 
 def test_builder_kernel_substitutes_host_name() -> None:
@@ -49,9 +51,10 @@ def test_builder_kernel_substitutes_host_name() -> None:
     assert 'logtype="kernel"' in out
 
 
-def test_builder_escapes_quotes_in_tc_name() -> None:
-    out = LokiQueryBuilder.fwlog_for(host_ip="10.0.0.5", tc_name='TC-"weird"-x')
-    assert '\\"weird\\"' in out
+def test_builder_escapes_quotes_in_host_name() -> None:
+    """A quote in the host name shouldn't terminate the LogQL string-literal."""
+    out = LokiQueryBuilder.fwlog_for(host_name='weird"host')
+    assert '\\"' in out
 
 
 # ── query_range — wrapper behavior ───────────────────────────────────────────
@@ -95,7 +98,7 @@ async def test_query_range_success_returns_slice() -> None:
     start, end = _window()
     result = await client.query_range(
         stream="fwlog",
-        logql=LokiQueryBuilder.fwlog_for(host_ip="10.0.0.5", tc_name="TC-1"),
+        logql=LokiQueryBuilder.fwlog_for(host_name="ssw-smci-14"),
         start=start,
         end=end,
     )
@@ -124,7 +127,7 @@ async def test_query_range_truncates_at_byte_cap() -> None:
     start, end = _window()
     result = await client.query_range(
         stream="fwlog",
-        logql=LokiQueryBuilder.fwlog_for(host_ip="10.0.0.5", tc_name="TC-1"),
+        logql=LokiQueryBuilder.fwlog_for(host_name="ssw-smci-14"),
         start=start,
         end=end,
     )
@@ -140,7 +143,7 @@ async def test_query_range_4xx_returns_error_label() -> None:
     start, end = _window()
     result = await client.query_range(
         stream="fwlog",
-        logql=LokiQueryBuilder.fwlog_for(host_ip="10.0.0.5", tc_name="TC-1"),
+        logql=LokiQueryBuilder.fwlog_for(host_name="ssw-smci-14"),
         start=start,
         end=end,
     )
@@ -162,7 +165,7 @@ async def test_query_range_429_retries_then_gives_up() -> None:
     start, end = _window()
     result = await client.query_range(
         stream="fwlog",
-        logql=LokiQueryBuilder.fwlog_for(host_ip="10.0.0.5", tc_name="TC-1"),
+        logql=LokiQueryBuilder.fwlog_for(host_name="ssw-smci-14"),
         start=start,
         end=end,
     )
@@ -227,7 +230,7 @@ async def test_query_range_sends_ns_timestamps() -> None:
     end = datetime(2026, 5, 13, 7, 0, tzinfo=UTC)
     await client.query_range(
         stream="fwlog",
-        logql=LokiQueryBuilder.fwlog_for(host_ip="10.0.0.5", tc_name="TC"),
+        logql=LokiQueryBuilder.fwlog_for(host_name="ssw-smci-14"),
         start=start,
         end=end,
     )

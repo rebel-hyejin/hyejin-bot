@@ -393,9 +393,7 @@ class JiraTriageHandler:
         ssh_loc = parse_ssh_url(issue.description_text)
         error_log_excerpt = extract_error_log(issue.description_text)
         window = self._make_window(issue, payload)
-        loki_slices, loki_error = await self._collect_loki(
-            host_ip=host_ip, host_name=title.hostname, tc=title.tc_name, window=window
-        )
+        loki_slices, loki_error = await self._collect_loki(host_name=title.hostname, window=window)
         ssh_artifacts, ssh_error = await self._collect_ssh(ssh_loc=ssh_loc)
 
         # (i) Build snapshot.
@@ -536,35 +534,28 @@ class JiraTriageHandler:
     async def _collect_loki(
         self,
         *,
-        host_ip: str | None,
         host_name: str,
-        tc: str,
         window: TimeWindow,
     ) -> tuple[tuple[LokiSlice, ...], str | None]:
-        """Issue up to 4 Loki queries in parallel. Returns slices + error label."""
-        # fwlog/smclog require IP; kernel/syslog use name.
-        coros: list[Any] = []
-        labels: list[str] = []
-        if host_ip:
-            coros.append(
-                self.loki.query_range(
-                    stream="fwlog",
-                    logql=LokiQueryBuilder.fwlog_for(host_ip=host_ip, tc_name=tc),
-                    start=window.start_ts,
-                    end=window.end_ts,
-                )
-            )
-            labels.append("fwlog")
-            coros.append(
-                self.loki.query_range(
-                    stream="smclog",
-                    logql=LokiQueryBuilder.smclog_for(host_ip=host_ip, tc_name=tc),
-                    start=window.start_ts,
-                    end=window.end_ts,
-                )
-            )
-            labels.append("smclog")
-        coros.append(
+        """Issue all 4 Loki queries in parallel. Returns slices + error label.
+
+        All streams key off `hostname` (Loki label, not IP). `smclog` is
+        the only one that targets a sibling `<host>-bmc` hostname; the
+        builder handles that internally.
+        """
+        coros: list[Any] = [
+            self.loki.query_range(
+                stream="fwlog",
+                logql=LokiQueryBuilder.fwlog_for(host_name=host_name),
+                start=window.start_ts,
+                end=window.end_ts,
+            ),
+            self.loki.query_range(
+                stream="smclog",
+                logql=LokiQueryBuilder.smclog_for(host_name=host_name),
+                start=window.start_ts,
+                end=window.end_ts,
+            ),
             self.loki.query_range(
                 stream="kernel",
                 logql=LokiQueryBuilder.kernel_for(
@@ -573,10 +564,7 @@ class JiraTriageHandler:
                 ),
                 start=window.start_ts,
                 end=window.end_ts,
-            )
-        )
-        labels.append("kernel")
-        coros.append(
+            ),
             self.loki.query_range(
                 stream="syslog",
                 logql=LokiQueryBuilder.syslog_for(
@@ -585,9 +573,9 @@ class JiraTriageHandler:
                 ),
                 start=window.start_ts,
                 end=window.end_ts,
-            )
-        )
-        labels.append("syslog")
+            ),
+        ]
+        labels = ["fwlog", "smclog", "kernel", "syslog"]
 
         results = cast(
             "list[LokiQueryResult]",
@@ -600,8 +588,6 @@ class JiraTriageHandler:
                 slices.append(r.slice)
             if r.error is not None:
                 errors.append(f"{label}:{r.error}")
-        if host_ip is None:
-            errors.append("fwlog,smclog:dns_failed")
         return (tuple(slices), "; ".join(errors) if errors else None)
 
     async def _collect_ssh(

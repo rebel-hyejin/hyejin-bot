@@ -40,15 +40,26 @@ class LokiQueryResult:
 
 
 class LokiQueryBuilder:
-    """Pure LogQL selector builders. No I/O."""
+    """Pure LogQL selector builders. No I/O.
+
+    The SSW Loki cluster doesn't publish separate `regression-fwlog` /
+    `regression-smclog` streams (verified empirically — those labels do
+    not exist in the cluster's `/loki/api/v1/labels` enumeration). FW
+    logs come through the kernel `logtype` with a `[rbln-fwi]` content
+    prefix (the rbln driver passes them through dmesg), and SMC logs
+    live in the `bmc-sel` logtype under a `<host>-bmc` hostname.
+    Documented in ssw-debugger/.../log-analysis SKILL.md.
+    """
 
     @staticmethod
-    def fwlog_for(*, host_ip: str, tc_name: str) -> str:
-        return f'{{job="regression-fwlog", hostname="{host_ip}", test_name="{_esc(tc_name)}"}}'
+    def fwlog_for(*, host_name: str) -> str:
+        """FW logs from the rbln driver kernel pass-through (`[rbln-fwi]` prefix)."""
+        return f'{{hostname="{_esc(host_name)}", logtype="kernel"}} |= "[rbln-fwi]"'
 
     @staticmethod
-    def smclog_for(*, host_ip: str, tc_name: str) -> str:
-        return f'{{job="regression-smclog", hostname="{host_ip}", test_name="{_esc(tc_name)}"}}'
+    def smclog_for(*, host_name: str) -> str:
+        """BMC System Event Log — thermal, power, fan, PMIC events."""
+        return f'{{hostname="{_esc(host_name)}-bmc", logtype="bmc-sel"}}'
 
     @staticmethod
     def kernel_for(*, host_name: str, template: str) -> str:

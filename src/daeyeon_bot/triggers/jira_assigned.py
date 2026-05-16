@@ -217,8 +217,8 @@ class JiraAssignedTrigger:
     async def _fetch_all_pages(self) -> list[IssueSummary]:
         out: list[IssueSummary] = []
         jql = self._build_jql()
-        start_at = 0
         page_size = 50
+        token: str | None = None
         while True:
             page = await self.jira.search_jql(
                 jql=jql,
@@ -232,7 +232,7 @@ class JiraAssignedTrigger:
                     "parent",
                     self.team_field_id or "summary",  # cheap dedup if no team field
                 ],
-                start_at=start_at,
+                next_page_token=token,
                 max_results=page_size,
             )
             out.extend(page.issues)
@@ -240,12 +240,12 @@ class JiraAssignedTrigger:
                 _log.warning(
                     "jira_assigned.max_per_cycle_hit",
                     cap=self.max_per_cycle,
-                    total=page.total,
+                    collected=len(out),
                 )
                 return out[: self.max_per_cycle]
-            if len(page.issues) < page_size:
+            if page.next_page_token is None:
                 return out
-            start_at += page_size
+            token = page.next_page_token
 
     def _classify_path(self, summary: IssueSummary) -> str:
         """Determine whether the match came from the user or team clause.

@@ -132,12 +132,21 @@ class FakeJiraClient:
         *,
         jql: str,
         fields: list[str],
-        start_at: int = 0,
+        next_page_token: str | None = None,
         max_results: int = 50,
     ) -> SearchPage:
+        """Cursor-paginated JQL search — mirrors `/rest/api/3/search/jql`.
+
+        The fake uses the int-as-string cursor as a simple offset into
+        the filtered list so tests can exercise multi-page loops
+        deterministically.
+        """
         del fields  # FakeJira returns everything
         matching = [iss for iss in self._issues.values() if _jql_matches(iss, jql)]
-        page = matching[start_at : start_at + max_results]
+        offset = int(next_page_token) if next_page_token else 0
+        page = matching[offset : offset + max_results]
+        end = offset + max_results
+        next_token: str | None = str(end) if end < len(matching) else None
         summaries = tuple(
             IssueSummary(
                 key=iss.key,
@@ -159,12 +168,7 @@ class FakeJiraClient:
             )
             for iss in page
         )
-        return SearchPage(
-            start_at=start_at,
-            max_results=max_results,
-            total=len(matching),
-            issues=summaries,
-        )
+        return SearchPage(issues=summaries, next_page_token=next_token)
 
     async def issue_get(
         self,

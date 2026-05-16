@@ -76,12 +76,16 @@ class IssueSummary:
 
 @dataclass(frozen=True, slots=True)
 class SearchPage:
-    """One page of `GET /rest/api/3/search`."""
+    """One page of `GET /rest/api/3/search/jql` (cursor-paginated).
 
-    start_at: int
-    max_results: int
-    total: int
+    Atlassian deprecated `/search` in favor of `/search/jql` (CHANGE-2046,
+    rolled out 2026-05). The new endpoint uses token-based cursor
+    pagination — `next_page_token=None` means we're on the last page.
+    There is no `total` count and no `startAt` offset anymore.
+    """
+
     issues: tuple[IssueSummary, ...]
+    next_page_token: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,16 +205,24 @@ class JiraClient:
         *,
         jql: str,
         fields: list[str],
-        start_at: int = 0,
+        next_page_token: str | None = None,
         max_results: int = 50,
     ) -> SearchPage:
-        params = {
+        """Cursor-paginated JQL search against `/rest/api/3/search/jql`.
+
+        Atlassian retired the offset-paginated `/search` endpoint in
+        CHANGE-2046 (rolled out 2026-05). The replacement uses a
+        `nextPageToken` cursor returned alongside the page; callers
+        loop until `SearchPage.next_page_token is None`.
+        """
+        params: dict[str, str] = {
             "jql": jql,
             "fields": ",".join(fields),
-            "startAt": str(start_at),
             "maxResults": str(max_results),
         }
-        data = await self._get(f"{_REST_V3}/search", params=params)
+        if next_page_token:
+            params["nextPageToken"] = next_page_token
+        data = await self._get(f"{_REST_V3}/search/jql", params=params)
         issues_raw = cast("list[dict[str, Any]]", data.get("issues", []))
         issues: list[IssueSummary] = []
         for raw in issues_raw:
@@ -231,12 +243,12 @@ class JiraClient:
                     raw_fields=f,
                 )
             )
-        return SearchPage(
-            start_at=int(data.get("startAt", start_at)),
-            max_results=int(data.get("maxResults", max_results)),
-            total=int(data.get("total", len(issues))),
-            issues=tuple(issues),
-        )
+        # `isLast` is the canonical end-of-pages signal; `nextPageToken`
+        # is only present when more pages exist.
+        is_last = bool(data.get("isLast", True))
+        token_raw = data.get("nextPageToken")
+        token: str | None = str(token_raw) if (token_raw and not is_last) else None
+        return SearchPage(issues=tuple(issues), next_page_token=token)
 
     async def issue_get(
         self,

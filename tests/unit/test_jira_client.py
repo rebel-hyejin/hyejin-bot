@@ -163,10 +163,8 @@ async def test_discover_fields_tolerates_missing_branch_commit_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_search_jql_parses_issue_summaries() -> None:
+    """Single-page response with `isLast=true` and no `nextPageToken`."""
     payload = {
-        "startAt": 0,
-        "maxResults": 50,
-        "total": 1,
         "issues": [
             {
                 "key": "SSWCI-100",
@@ -179,17 +177,52 @@ async def test_search_jql_parses_issue_summaries() -> None:
                 },
             }
         ],
+        "isLast": True,
     }
     transport = httpx.MockTransport(lambda req: httpx.Response(200, json=payload))
     client = _client(transport)
-    page = await client.search_jql(jql="x", fields=["key"], start_at=0, max_results=50)
-    assert page.total == 1
+    page = await client.search_jql(jql="x", fields=["key"], max_results=50)
+    assert page.next_page_token is None
     assert len(page.issues) == 1
     issue = page.issues[0]
     assert issue.key == "SSWCI-100"
     assert issue.assignee_account_id == "u1"
     assert issue.parent_key == "SSWCI-99"
     assert issue.status_name == "Open"
+
+
+@pytest.mark.asyncio
+async def test_search_jql_threads_next_page_token() -> None:
+    """Multi-page response: `nextPageToken` is surfaced on `SearchPage`."""
+    payload = {
+        "issues": [
+            {"key": "SSWCI-1", "fields": {"summary": "a"}},
+            {"key": "SSWCI-2", "fields": {"summary": "b"}},
+        ],
+        "isLast": False,
+        "nextPageToken": "cursor-abc",
+    }
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, json=payload))
+    client = _client(transport)
+    page = await client.search_jql(jql="x", fields=["key"], max_results=2)
+    assert page.next_page_token == "cursor-abc"
+    assert len(page.issues) == 2
+
+
+@pytest.mark.asyncio
+async def test_search_jql_hits_the_jql_endpoint() -> None:
+    """Regression: the request URL must be `/rest/api/3/search/jql`, not /search.
+    Atlassian retired `/search` in CHANGE-2046 (2026-05)."""
+    captured: dict[str, object] = {}
+
+    def _handler(req: httpx.Request) -> httpx.Response:
+        captured["path"] = req.url.path
+        return httpx.Response(200, json={"issues": [], "isLast": True})
+
+    transport = httpx.MockTransport(_handler)
+    client = _client(transport)
+    await client.search_jql(jql="x", fields=["key"])
+    assert captured["path"] == "/rest/api/3/search/jql"
 
 
 @pytest.mark.asyncio

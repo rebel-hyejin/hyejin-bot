@@ -4,6 +4,15 @@ The bot uses Claude as a structured-output triage engine. The contract
 here is **the format Claude must emit** so the handler can validate it
 with Pydantic and forward it to Jira's REST API as a wiki-markup comment.
 
+> **v1.1 refactor (2026-05-16)**: `summary_md` (single rendered blob) was
+> dropped in favor of structured fields — `symptom`, `evidence`, `domain`,
+> `layer_rationale`, `next_data`, `severity`, `suspected_duplicates`,
+> `needs_human`. The handler renders the structured output into a
+> 4-section wiki-markup comment (Summary / Evidences / Analysis / Action
+> Items) with `{code:title=…}` log attachments. The schema snippets below
+> still reference `summary_md` for historical context; the authoritative
+> shape is in `src/daeyeon_bot/handlers/jira_triage_schemas.py:TriageOutput`.
+
 ---
 
 ## 1. The Pydantic v2 schema (single source of truth)

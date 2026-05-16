@@ -28,9 +28,10 @@ Phases 0–7 of `docs/PLAN.md` are landed:
 | 5 | Deployment: launchd plist + entrypoint, systemd unit (Type=notify), install scripts, setup-token. |
 | 6 | Hardening: events retention with FK-aware cascade, hot SQLite backup, heartbeat self-alert, runbook. |
 | 7 | GitHub PR-review bot (feature 001) — `gh_review_requested` polling trigger + `pr_review` handler. Lands behind `[handlers.pr_review].enabled = false`; flip to enable. Persona reloaded from `~/.claude/skills/pr-reviewer/SKILL.md` on every event by mtime. Migration 002 adds `gh_review_requested_state` + `pr_review_audit`. Auth flows through the operator's local `gh` CLI. |
+| 8 | Jira regression triage (feature 002) — `jira_assigned` polling trigger + `jira_triage` handler. Auto-triages SSWCI tickets assigned to daeyeon or the DevOps Team: clones ssw-bundle at the parent Epic's branch+commit, fetches Loki streams (kernel/syslog/fwlog/smclog via `[rbln-fwi]` and bmc-sel labels) + SSH artifacts + evidence-driven `products/` source grep, then synthesizes a 4-section Jira wiki-markup comment (Summary / Evidences / Analysis / Action Items) with windowed `{code}` log attachments. Persona at `.claude/skills/daeyeon-bot-jira-triage/SKILL.md`. Migration 005 adds `jira_assigned_state` + `jira_triage_audit`. |
 
-Built-in triggers: `manual`, `gh_review_requested`. Built-in handlers:
-`echo`, `pr_review`. Other workloads (cron, webhook, slack, digest, …) are
+Built-in triggers: `manual`, `gh_review_requested`, `jira_assigned`. Built-in handlers:
+`echo`, `pr_review`, `jira_triage`. Other workloads (cron, webhook, slack, digest, …) are
 added one trigger/handler at a time using the recipes below.
 
 ## Daily commands

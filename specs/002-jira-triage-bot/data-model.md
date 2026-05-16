@@ -246,13 +246,21 @@ class SuspectedDuplicate:
 
 @dataclass(frozen=True, slots=True)
 class TriageDraft:
-    """Validated Claude output, ready to ship to Jira."""
-    summary_md: str
+    """Validated Claude output, ready to ship to Jira.
+
+    v1.1 (2026-05-16): structured fields instead of a single ``summary_md`` blob.
+    Handler renders these into a 4-section Jira wiki-markup comment
+    (Summary / Evidences / Analysis / Action Items) — see
+    contracts/claude-triage-output.md.
+    """
+    symptom: str
+    evidence: tuple[EvidenceItem, ...]
     domain: Domain
+    layer_rationale: str
+    next_data: tuple[str, ...]
     severity: Severity
     suspected_duplicates: tuple[SuspectedDuplicate, ...]
     needs_human: bool
-    evidence: tuple[EvidenceItem, ...]
 
 @dataclass(frozen=True, slots=True)
 class PostedComment:

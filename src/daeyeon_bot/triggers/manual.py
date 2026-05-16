@@ -1,6 +1,11 @@
-"""Manual trigger — fires events from the CLI (`daeyeon-bot dev fire manual`).
+"""Manual trigger — write-only event source for CLI-driven fires.
 
-Phase 0: defines MANIFEST only. Implementation lands in Phase 1.
+There is no live polling loop. Manual events are written directly to the
+outbox by `daeyeon-bot dev fire …` (and the per-handler convenience
+commands `dev fire-pr-review` / `dev fire-jira-triage`) via the same
+`infra.outbox.insert_event` + `enqueue_handler` path the live triggers
+use. We register the manifest here so the trigger registry can resolve
+the `manual` source name when an outbox row references it.
 """
 
 from __future__ import annotations

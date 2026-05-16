@@ -195,4 +195,7 @@ def test_happy_path_writes_event_and_outbox_row(
     assert etype == "pr.review.manual"
     parsed = json.loads(payload)
     assert parsed["force"] is True
-    assert parsed["request_gen"].startswith("manual_")
+    # force-fire bumps request_gen to int(time.time()) so audit dedup
+    # doesn't collide with the prior gen=0 auto-trigger row at same SHA.
+    assert isinstance(parsed["request_gen"], int)
+    assert parsed["request_gen"] > 0

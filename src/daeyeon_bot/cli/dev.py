@@ -220,7 +220,10 @@ async def _fire_pr_review(*, pr: str, force: bool, dry_run: bool, config_path: s
         typer.echo(f"PR {pr} has no head SHA; aborting", err=True)
         raise typer.Exit(code=1)
 
-    request_gen = f"manual_{int(time.time())}" if force else "0"
+    # `request_gen` is INT per the handler schema; force-fire uses the wall
+    # clock to bump the generation so the audit dedup row doesn't collide
+    # with the prior (gen=0) auto-trigger row at the same SHA.
+    request_gen = int(time.time()) if force else 0
     payload = {
         "repo": repo,
         "pr_number": pr_number,

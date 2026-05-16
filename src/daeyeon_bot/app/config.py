@@ -35,6 +35,12 @@ class RetentionSection(BaseModel):
     # Dormant jira_assigned_state rows (in_pending_set=0) are pruned after
     # this many days. Feature 002.
     jira_state_dormant_days: int = 180
+    # Outbox rows that landed in `status='dead_letter'` are pruned ahead
+    # of the generic `events_days` window so they don't accumulate
+    # indefinitely (the FK-aware `_prune_events` only deletes outbox rows
+    # once the parent event is past `events_days`). Operator-tunable;
+    # default 30 days keeps a month of forensic history.
+    dead_letter_days: int = 30
 
 
 class RateLimitDefaults(BaseModel):
@@ -91,6 +97,12 @@ class LokiConfig(BaseModel):
     base_url: str = "http://loki.ssw.rbln.in"
     per_stream_max_bytes: int = 1_048_576  # 1 MB
     timeout_seconds: int = 30
+    # `rsmd [cdp]` FW console dumps land in the syslog logtype but Alloy
+    # parses their RFC 3164 timestamps as KST when they were actually UTC,
+    # which shifts ingestion time by -9h. Widening the syslog query window
+    # by this many extra hours on each side recovers the shifted entries.
+    # See ssw-debugger log-analysis SKILL.md for the upstream bug.
+    syslog_window_extra_hours: int = 12
     # LogQL templates for kernel/syslog streams. `{host}` is substituted at
     # query time with the hostname-by-name. The label schema is the canonical
     # SSW Loki shape — `hostname` + `logtype` — documented in
@@ -177,6 +189,16 @@ class JiraTriageHandlerEntry(HandlerEntry):
     skills_root: str | None = None
     # Per-event wall-clock cap covering all stages.
     timeout_seconds: int = 600
+    # Optional per-project timeout override. Map of Jira project key →
+    # seconds. Project keys not listed use `timeout_seconds`. Useful when
+    # one project's ssw-bundle clone is materially slower (large
+    # submodule tree, slow network mount) than the rest.
+    timeout_overrides_seconds: dict[str, int] = Field(default_factory=dict)
+
+    def timeout_for_project(self, project_key: str) -> int:
+        """Resolve the wall-clock budget for an event from project `project_key`."""
+        return self.timeout_overrides_seconds.get(project_key, self.timeout_seconds)
+
     # Project-root-relative path for the dedicated ssw-bundle clone.
     ssw_bundle_path: str = "var/ssw-bundle"
     allow_external_ssw_bundle: bool = False

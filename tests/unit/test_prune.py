@@ -65,15 +65,16 @@ async def _insert_outbox(
     event_id: str,
     handler: str,
     status: str = "pending",
+    created_at: datetime | None = None,
 ) -> int:
+    iso = (created_at or datetime(2026, 1, 1, tzinfo=UTC)).isoformat()
     cur = await conn.execute(
         """
         INSERT INTO outbox(event_id, handler, status, attempt, attempt_epoch,
                            created_at, updated_at)
-        VALUES (?, ?, ?, 0, 0,
-                '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')
+        VALUES (?, ?, ?, 0, 0, ?, ?)
         """,
-        (event_id, handler, status),
+        (event_id, handler, status, iso, iso),
     )
     assert cur.lastrowid is not None
     return cur.lastrowid
@@ -289,5 +290,70 @@ async def test_prune_drops_dormant_gh_state_past_threshold(tmp_path: Path, now: 
         ) as cur:
             rows = await cur.fetchall()
         assert {row["pr_number"] for row in rows} == {2, 3}
+    finally:
+        await conn.close()
+
+
+# ── dead_letter aggressive pruning ───────────────────────────────────────────
+
+
+async def test_prune_dead_letter_outbox_past_cutoff(tmp_path: Path, now: datetime) -> None:
+    """`dead_letter` outbox rows past `dead_letter_days` get deleted independently
+    of the `events_days` window."""
+    conn = await _open(tmp_path / "state.db")
+    try:
+        # event itself is only 40 days old — still inside events_days=90 — but
+        # its outbox row is `dead_letter` and older than `dead_letter_days=30`.
+        await _insert_event(conn, event_id="dlq-old", now=now - timedelta(days=40))
+        await _insert_outbox(
+            conn,
+            event_id="dlq-old",
+            handler="echo",
+            status="dead_letter",
+            created_at=now - timedelta(days=40),
+        )
+        # And a fresh dead_letter that should stick around.
+        await _insert_event(conn, event_id="dlq-fresh", now=now - timedelta(days=5))
+        await _insert_outbox(
+            conn,
+            event_id="dlq-fresh",
+            handler="echo",
+            status="dead_letter",
+            created_at=now - timedelta(days=5),
+        )
+        await conn.commit()
+
+        report = await prune(conn, config=_config(tmp_path), now=now)
+        assert report.dead_letter_deleted == 1
+        assert report.outbox_deleted == 1  # subsumed into outbox_deleted total
+
+        async with conn.execute("SELECT event_id FROM outbox") as cur:
+            rows = await cur.fetchall()
+        remaining = {row["event_id"] for row in rows}
+        assert "dlq-old" not in remaining
+        assert "dlq-fresh" in remaining
+    finally:
+        await conn.close()
+
+
+async def test_prune_dead_letter_does_not_touch_acked(tmp_path: Path, now: datetime) -> None:
+    """Aggressive pruning only targets `dead_letter` — acked rows wait for events_days."""
+    conn = await _open(tmp_path / "state.db")
+    try:
+        await _insert_event(conn, event_id="acked-old", now=now - timedelta(days=40))
+        await _insert_outbox(
+            conn,
+            event_id="acked-old",
+            handler="echo",
+            status="acked",
+            created_at=now - timedelta(days=40),
+        )
+        await conn.commit()
+
+        report = await prune(conn, config=_config(tmp_path), now=now)
+        assert report.dead_letter_deleted == 0
+        async with conn.execute("SELECT COUNT(*) AS n FROM outbox") as cur:
+            row = await cur.fetchone()
+        assert row is not None and row["n"] == 1
     finally:
         await conn.close()

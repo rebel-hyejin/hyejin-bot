@@ -7,10 +7,17 @@ PLAN.md §4.2 retention defaults:
     runs_keep_per_handler = 10      #   … unless they're in the most-recent N per handler.
     dedup_default_ttl_days = 7      # dedup_keys cleanup honours each row's expires_at.
     gh_state_dormant_days = 90      # delete dormant gh_review_requested_state rows.
+    dead_letter_days = 30           # delete outbox `dead_letter` rows ahead of events_days.
 
 Events pruning cascades the outbox rows that reference them — but only if
 none of those rows are still active (`pending` / `running` / `retry` /
 `interrupted`). An event that's still mid-flight stays put.
+
+Dead-letter pruning runs first and is independent of `events_days`: a
+`dead_letter` row carries no in-flight semantics (it's already routed
+to DLQ for operator replay), so it can age out faster than the general
+events retention window. When all of an event's outbox rows are gone,
+the subsequent `_prune_events` pass tidies the (now-orphaned) event.
 
 `prune()` is idempotent and returns counts so the CLI can report what shrank.
 """
@@ -33,6 +40,7 @@ class PruneReport:
     events_deleted: int
     outbox_deleted: int
     gh_state_deleted: int = 0
+    dead_letter_deleted: int = 0
 
 
 async def prune(conn: aiosqlite.Connection, *, config: Config, now: datetime) -> PruneReport:
@@ -43,6 +51,10 @@ async def prune(conn: aiosqlite.Connection, *, config: Config, now: datetime) ->
         keep_per_handler=config.retention.runs_keep_per_handler,
     )
     dedup_deleted = await _prune_dedup_keys(conn, now=now)
+    dead_letter_deleted = await _prune_dead_letter_outbox(
+        conn,
+        cutoff=now - timedelta(days=config.retention.dead_letter_days),
+    )
     outbox_deleted, events_deleted = await _prune_events(
         conn,
         cutoff=now - timedelta(days=config.retention.events_days),
@@ -56,8 +68,9 @@ async def prune(conn: aiosqlite.Connection, *, config: Config, now: datetime) ->
         runs_deleted=runs_deleted,
         dedup_keys_deleted=dedup_deleted,
         events_deleted=events_deleted,
-        outbox_deleted=outbox_deleted,
+        outbox_deleted=outbox_deleted + dead_letter_deleted,
         gh_state_deleted=gh_state_deleted,
+        dead_letter_deleted=dead_letter_deleted,
     )
 
 
@@ -89,6 +102,22 @@ async def _prune_runs(
 
 async def _prune_dedup_keys(conn: aiosqlite.Connection, *, now: datetime) -> int:
     cursor = await conn.execute("DELETE FROM dedup_keys WHERE expires_at < ?", (now.isoformat(),))
+    return cursor.rowcount
+
+
+async def _prune_dead_letter_outbox(conn: aiosqlite.Connection, *, cutoff: datetime) -> int:
+    """Delete `status='dead_letter'` outbox rows older than cutoff.
+
+    Independent of the events_days window — dead-letter rows have no
+    in-flight semantics, so they can age out aggressively. The follow-up
+    `_prune_events` pass cleans up any events that lose their last
+    outbox row as a result.
+    """
+    iso_cutoff = cutoff.isoformat()
+    cursor = await conn.execute(
+        "DELETE FROM outbox WHERE status = 'dead_letter' AND created_at < ?",
+        (iso_cutoff,),
+    )
     return cursor.rowcount
 
 

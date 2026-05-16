@@ -85,6 +85,10 @@ timeout_seconds = 30
 # Override only if your fleet exports under a different label scheme.
 kernel_query_template = '{hostname="{host}", logtype="kernel"}'
 syslog_query_template = '{hostname="{host}", logtype="syslog"}'
+# rsmd [cdp] FW console dumps land in syslog with a known ~9h timestamp
+# shift (Alloy mis-parses RFC 3164 as KST). The syslog query window is
+# widened by this many extra hours on each side to recover them.
+syslog_window_extra_hours = 12
 
 # ─── Triggers ──────────────────────────────────────────────────────────────────
 # A trigger is enabled if its section exists with `enabled = true`.

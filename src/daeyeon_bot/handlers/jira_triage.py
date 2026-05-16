@@ -199,7 +199,7 @@ class _SswBundleClient(Protocol):
 
 @runtime_checkable
 class _HostResolver(Protocol):
-    def resolve(self, name: str) -> str | None: ...
+    async def resolve(self, name: str) -> str | None: ...
 
 
 _FALLBACK_WINDOW = timedelta(minutes=30)
@@ -224,7 +224,11 @@ class JiraTriageHandler:
     pause_guard: PauseGuard = _no_pause
 
     async def handle(self, event: Event, ctx: HandlerContext) -> HandlerResult:
-        budget = float(self.config.timeout_seconds)
+        # Allow per-project timeout overrides — some projects have slower
+        # ssw-bundle clones / bigger Loki windows and need more headroom.
+        issue_key = str(event.payload.get("issue_key", ""))
+        project_key = issue_key.split("-", 1)[0] if "-" in issue_key else ""
+        budget = float(self.config.timeout_for_project(project_key))
         try:
             return await asyncio.wait_for(self._handle_inner(event, ctx), timeout=budget)
         except TimeoutError as exc:
@@ -387,7 +391,13 @@ class JiraTriageHandler:
 
         # (g) DNS resolve.
         host_resolver = self.host_resolver_factory()
-        host_ip = host_resolver.resolve(title.hostname)
+        host_ip = await host_resolver.resolve(title.hostname)
+        if host_ip is None:
+            _log.info(
+                "jira_triage.dns_failed",
+                hostname=title.hostname,
+                issue_key=payload.issue_key,
+            )
 
         # SSH dump location parse + (h) parallel data collection.
         ssh_loc = parse_ssh_url(issue.description_text)
@@ -541,8 +551,13 @@ class JiraTriageHandler:
 
         All streams key off `hostname` (Loki label, not IP). `smclog` is
         the only one that targets a sibling `<host>-bmc` hostname; the
-        builder handles that internally.
+        builder handles that internally. The `syslog` window is widened
+        by `loki_config.syslog_window_extra_hours` on each side to catch
+        rsmd `[cdp]` entries whose RFC 3164 timestamps Alloy parses as
+        KST when they're actually UTC (a known -9h shift); the kernel /
+        fwlog / smclog windows stay tight on the TC time range.
         """
+        syslog_pad = timedelta(hours=self.loki_config.syslog_window_extra_hours)
         coros: list[Any] = [
             self.loki.query_range(
                 stream="fwlog",
@@ -571,8 +586,8 @@ class JiraTriageHandler:
                     host_name=host_name,
                     template=self.loki_config.syslog_query_template,
                 ),
-                start=window.start_ts,
-                end=window.end_ts,
+                start=window.start_ts - syslog_pad,
+                end=window.end_ts + syslog_pad,
             ),
         ]
         labels = ["fwlog", "smclog", "kernel", "syslog"]

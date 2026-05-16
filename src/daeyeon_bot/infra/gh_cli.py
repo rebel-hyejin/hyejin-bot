@@ -31,7 +31,11 @@ from daeyeon_bot.core.errors import (
 )
 
 _DEFAULT_TIMEOUT = 30.0
-_REVIEW_EVENT: Literal["COMMENT"] = "COMMENT"
+# GitHub Review API `event` values — see `/repos/.../pulls/.../reviews` docs.
+# `APPROVE` counts toward branch protection. `REQUEST_CHANGES` blocks merge —
+# we don't expose it here (too strong a signal for an automated bot). The
+# handler picks between `APPROVE` (0 findings) and `COMMENT` (any finding).
+ReviewEvent = Literal["APPROVE", "COMMENT"]
 
 # stderr patterns. `gh` writes "HTTP <code>" or "gh: <msg> (HTTP <code>)" depending
 # on the subcommand; cover both. Auth-failure phrasing varies across `gh` versions.
@@ -144,9 +148,16 @@ class GhCli:
         commit_id: str,
         body: str,
         comments: list[dict[str, Any]],
+        event: ReviewEvent = "COMMENT",
         login: str | None = None,
     ) -> dict[str, Any]:
-        """Post one review object. `event` is always "COMMENT" (FR-010a).
+        """Post one review object. `event` defaults to "COMMENT".
+
+        Pass `event="APPROVE"` to submit a GitHub APPROVE review (counts
+        toward branch protection); the handler picks this when finding
+        count is zero. Self-approval is rejected by GitHub when the bot's
+        login equals the PR author — the handler's `skipped_self_authored`
+        gate already prevents the request from reaching us in that case.
 
         On HTTP 5xx (server accepted the POST then died on the response leg),
         if `login` is provided, probe the reviews list for a matching
@@ -157,7 +168,7 @@ class GhCli:
         """
         request: dict[str, Any] = {
             "commit_id": commit_id,
-            "event": _REVIEW_EVENT,
+            "event": event,
             "body": body,
             "comments": comments,
         }
@@ -214,6 +225,75 @@ class GhCli:
                 continue
             out.append(cast("dict[str, Any]", raw))
         return out
+
+    async def list_prior_reviews_with_comments(  # noqa: PLR0912 — fan-out on GH payload shape
+        self,
+        repo: str,
+        pr_number: int,
+        *,
+        login: str,
+        limit: int = 2,
+    ) -> list[dict[str, Any]]:
+        """Return the most recent <= `limit` submitted reviews on this PR by `login`,
+        each with its inline comments attached under `inline_comments`.
+
+        Used to give the persona context for re-review buckets
+        (Resolved / Still open / New). On any fetch error returns `[]` —
+        prior context is a nice-to-have, never a triage blocker.
+        """
+        try:
+            reviews_payload = await self._api(
+                "GET",
+                f"/repos/{repo}/pulls/{pr_number}/reviews",
+                extra=("-f", "per_page=100"),
+                paginate=True,
+            )
+        except Exception:
+            return []
+        if not isinstance(reviews_payload, list):
+            return []
+
+        reviews: list[dict[str, Any]] = []
+        for raw in reviews_payload:
+            if not isinstance(raw, dict):
+                continue
+            user = raw.get("user")
+            if not isinstance(user, dict) or user.get("login") != login:
+                continue
+            submitted = raw.get("submitted_at")
+            if submitted in (None, ""):
+                continue
+            reviews.append(cast("dict[str, Any]", raw))
+
+        reviews.sort(key=lambda r: str(r.get("submitted_at", "")), reverse=True)
+        recent = reviews[:limit]
+        if not recent:
+            return []
+
+        # Pull all PR-level review comments once; filter client-side.
+        try:
+            comments_payload = await self._api(
+                "GET",
+                f"/repos/{repo}/pulls/{pr_number}/comments",
+                extra=("-f", "per_page=100"),
+                paginate=True,
+            )
+        except Exception:
+            comments_payload = []
+        comments_by_review: dict[int, list[dict[str, Any]]] = {}
+        if isinstance(comments_payload, list):
+            for raw in comments_payload:
+                if not isinstance(raw, dict):
+                    continue
+                rid = raw.get("pull_request_review_id")
+                if not isinstance(rid, int):
+                    continue
+                comments_by_review.setdefault(rid, []).append(cast("dict[str, Any]", raw))
+
+        for r in recent:
+            rid = r.get("id")
+            r["inline_comments"] = comments_by_review.get(rid, []) if isinstance(rid, int) else []
+        return recent
 
     async def _discover_existing_review(
         self,

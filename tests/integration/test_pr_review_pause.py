@@ -53,6 +53,7 @@ _PATCH_HUNK = "@@ -1,3 +1,5 @@\n ctx\n+added line one\n+added line two\n ctx\n c
 def _claude_response(head_sha: str) -> str:
     return json.dumps(
         {
+            "verdict": "PASS",
             "summary": (
                 f"Reviewed at SHA {head_sha}. Looks fine, with one nit on the second added line."
             ),

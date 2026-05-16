@@ -8,7 +8,9 @@
 |---|---|
 | 🚨 **CRITICAL** | 머지 시 production / daily regression / pipeline / secret / data 손실 즉시 위험. 회귀로 동작 깨짐. 핫픽스 없이 머지 금지. |
 | ⚠️ **MAJOR** | 머지 가능하나 같은 PR 내 fix 권장. correctness 문제 / observability gap / 명백한 Clean Code 위반 / non-idempotent CI step. |
-| 💡 **MINOR** | nit. 네이밍 · 주석 · 사소한 중복. 별도 PR 가능. |
+| 💡 **MINOR** | 카탈로그 룰(`[N*]`/`[F*]`/`[G*]`/`[C*]`) 매칭 + 운영 영향 한 가지 이상 (daily regression / runner / secret / build budget / flake / lab lock / rollback / drift 중 하나). 카탈로그 매칭만 있고 운영 영향이 없으면 **finding 아님** — drop. |
+
+**MINOR 발행 게이트**: SKILL.md hard rule이 강제한다 — 단순 style·naming preference, 취향 문제, hypothetical risk("~할 수도 있음")로 MINOR를 발행하지 않는다. 의심스러우면 drop. 그 결과 finding=0이면 [Verdict](#verdict) = `APPROVE`. False-positive MINOR로 APPROVE를 깎지 말 것.
 
 표기 규칙 (deterministic):
 - **PR-bound 출력 (default)**: 본문 산문은 한국어, 라벨·룰 ID·`file:line`·코드 식별자·verdict 라벨은 ASCII 영어 토큰. 라벨 자체에는 이모지 금지(`CRITICAL` / `MAJOR` / `MINOR`, `PASS` / `CONCERNS` / `FAIL`) — PR 호스트별 렌더링 차이를 피한다.
@@ -18,13 +20,16 @@
 
 ## Verdict
 
-| 라벨 | 기준 |
-|---|---|
-| ✅ **PASS** | CRITICAL 0개, MAJOR 0개. MINOR만. |
-| ⚠️ **CONCERNS** | CRITICAL 0개, MAJOR ≥ 1개. 같은 PR에서 fix 후 머지. |
-| ❌ **FAIL** | CRITICAL ≥ 1개. 머지 금지. fix 후 재리뷰. |
+| 라벨 | 기준 | GH event |
+|---|---|---|
+| 🟢 **APPROVE** | finding 0개 (CRITICAL 0 / MAJOR 0 / MINOR 0). | `APPROVE` — branch protection 카운트에 포함됨 |
+| ✅ **PASS** | CRITICAL 0개, MAJOR 0개. MINOR ≥ 1. | `COMMENT` |
+| ⚠️ **CONCERNS** | CRITICAL 0개, MAJOR ≥ 1개. 같은 PR에서 fix 후 머지. | `COMMENT` |
+| ❌ **FAIL** | CRITICAL ≥ 1개. 머지 금지. fix 후 재리뷰. | `COMMENT` |
 
-Verdict 라인 형식: `**Verdict**: <PASS | CONCERNS | FAIL> — <한 문장 근거>`. 본문 첫 줄에 위치하되, role-primed인 경우 `**Reviewer**: as Senior <Role>` 한 줄이 그 위에 들어간다. 근거는 별도 섹션이 아니라 같은 줄에 통합 — 별도 Recommendation Rationale 섹션을 두지 않는다.
+`APPROVE`는 **진짜 GitHub APPROVE 이벤트**다 — daeyeon 계정으로 기록되며 branch protection 승인 카운트에 잡힌다. JSON `verdict` 필드와 `comments[]` 의 정합성이 schema validator로 강제된다: `verdict=APPROVE`이면 `comments==[]` 여야 한다 (validator가 reject). 즉 inline finding이 한 개라도 있으면 APPROVE 못 한다.
+
+Verdict 라인 형식: `**Verdict**: <APPROVE | PASS | CONCERNS | FAIL> — <한 문장 근거>`. 본문 첫 줄에 위치하되, role-primed인 경우 `**Reviewer**: as Senior <Role>` 한 줄이 그 위에 들어간다. 근거는 별도 섹션이 아니라 같은 줄에 통합 — 별도 Recommendation Rationale 섹션을 두지 않는다.
 
 ## Review Summary 템플릿
 
@@ -80,7 +85,11 @@ finding 나열 금지 — walkthrough 성격의 단락.>
 
 **Role-primed 변형**: Verdict 위에 `**Reviewer**: as Senior <Role>` 한 줄 추가, sign-off도 `— daeyeon-bot 🐥 (as Senior <Role>)`.
 
-Findings 0개(`**Verdict**: PASS`)면 표 자체 생략 — Verdict + 개요 + (옵션) Positive + sign-off. PR-bound 본문에서는 verdict 라벨 앞에 이모지를 붙이지 않는다(예: `✅ PASS` 금지, `PASS` 만 사용) — 채팅 caller에서만 이모지 토큰 허용.
+Findings 0개면 표 자체 생략. 두 경우로 나뉜다:
+- **`Verdict: APPROVE`** (deserving approval): Verdict + 개요 + (옵션) Positive + sign-off. 봇이 실제 GitHub APPROVE 이벤트를 emit하므로, 정말 finding이 0개인 케이스만. 추측성 "approve 가능해 보임" 으로 가지 말 것.
+- **`Verdict: PASS`** (MINOR-only): MINOR finding이 있는데 카탈로그 룰을 통과한 케이스. CRITICAL/MAJOR 0개라 GH event는 COMMENT.
+
+PR-bound 본문에서는 verdict 라벨 앞에 이모지를 붙이지 않는다(예: `✅ PASS` 금지, `PASS` 만 사용) — 채팅 caller에서만 이모지 토큰 허용.
 
 ### Sign-off (필수)
 

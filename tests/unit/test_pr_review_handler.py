@@ -163,6 +163,7 @@ async def test_happy_path_posts_review_and_audit(tmp_path: Path) -> None:
         session=FakeClaudeSession(
             default=json.dumps(
                 {
+                    "verdict": "PASS",
                     "summary": "All good for SHA deadbeef.",
                     "comments": [
                         {
@@ -217,7 +218,9 @@ async def test_system_prompt_carries_persona_and_json_schema(tmp_path: Path) -> 
     fake_gh = FakeGh()
     fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
     factory = FakeFactory(
-        session=FakeClaudeSession(default=json.dumps({"summary": "ok at deadbeef", "comments": []}))
+        session=FakeClaudeSession(
+            default=json.dumps({"verdict": "APPROVE", "summary": "ok at deadbeef", "comments": []})
+        )
     )
     handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
     try:
@@ -388,7 +391,9 @@ async def test_allowed_repo_proceeds_through_gate(tmp_path: Path) -> None:
         author="alice",
         files=_FILES_ONE_FILE,
     )
-    factory = FakeFactory(session=FakeClaudeSession(default='{"summary": "ok", "comments": []}'))
+    factory = FakeFactory(
+        session=FakeClaudeSession(default='{"verdict": "APPROVE", "summary": "ok", "comments": []}')
+    )
     handler, conn, _ = await _build_handler(
         tmp_path,
         fake_gh=fake_gh,
@@ -521,6 +526,7 @@ async def test_out_of_hunk_anchor_folded_into_summary(tmp_path: Path) -> None:
         session=FakeClaudeSession(
             default=json.dumps(
                 {
+                    "verdict": "PASS",
                     "summary": "Reviewed at deadbeef.",
                     "comments": [
                         {
@@ -563,8 +569,12 @@ async def test_force_supersede_prepends_header_and_chains_audit(
     factory = FakeFactory(
         session=FakeClaudeSession(
             responses=[
-                json.dumps({"summary": "First pass at deadbeef.", "comments": []}),
-                json.dumps({"summary": "Second pass at deadbeef.", "comments": []}),
+                json.dumps(
+                    {"verdict": "APPROVE", "summary": "First pass at deadbeef.", "comments": []}
+                ),
+                json.dumps(
+                    {"verdict": "APPROVE", "summary": "Second pass at deadbeef.", "comments": []}
+                ),
             ],
             default="{}",
         )
@@ -606,7 +616,9 @@ async def test_redaction_in_summary_blocks_post(tmp_path: Path) -> None:
         "Reviewed at deadbeef. Found leaked GitHub PAT: ghp_AAAAAAAAAAAAAAAAAAAAAAAAA in config."
     )
     factory = FakeFactory(
-        session=FakeClaudeSession(default=json.dumps({"summary": leaky_summary, "comments": []}))
+        session=FakeClaudeSession(
+            default=json.dumps({"verdict": "APPROVE", "summary": leaky_summary, "comments": []})
+        )
     )
     handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
     try:
@@ -627,6 +639,7 @@ async def test_redaction_in_inline_comment_blocks_post(tmp_path: Path) -> None:
         session=FakeClaudeSession(
             default=json.dumps(
                 {
+                    "verdict": "PASS",
                     "summary": "Reviewed at deadbeef. Spotted suspicious value below.",
                     "comments": [
                         {
@@ -664,7 +677,9 @@ async def test_entropy_only_hit_in_summary_posts_unchanged(tmp_path: Path) -> No
     )
     factory = FakeFactory(
         session=FakeClaudeSession(
-            default=json.dumps({"summary": summary_with_entropy, "comments": []})
+            default=json.dumps(
+                {"verdict": "APPROVE", "summary": summary_with_entropy, "comments": []}
+            )
         )
     )
     handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
@@ -689,6 +704,7 @@ async def test_clean_content_passes_redaction_and_posts(tmp_path: Path) -> None:
         session=FakeClaudeSession(
             default=json.dumps(
                 {
+                    "verdict": "PASS",
                     "summary": "Reviewed at deadbeef. Looks clean.",
                     "comments": [
                         {
@@ -718,7 +734,9 @@ async def test_already_reviewed_skips_without_force(tmp_path: Path) -> None:
     fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
     factory = FakeFactory(
         session=FakeClaudeSession(
-            default=json.dumps({"summary": "Reviewed at deadbeef.", "comments": []})
+            default=json.dumps(
+                {"verdict": "APPROVE", "summary": "Reviewed at deadbeef.", "comments": []}
+            )
         )
     )
     handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
@@ -748,7 +766,9 @@ async def test_pause_guard_short_circuits_before_post(tmp_path: Path) -> None:
     fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
     factory = FakeFactory(
         session=FakeClaudeSession(
-            default=json.dumps({"summary": "Reviewed at deadbeef.", "comments": []})
+            default=json.dumps(
+                {"verdict": "APPROVE", "summary": "Reviewed at deadbeef.", "comments": []}
+            )
         )
     )
     handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
@@ -766,6 +786,162 @@ async def test_pause_guard_short_circuits_before_post(tmp_path: Path) -> None:
         assert fake_gh.posted_reviews() == []
     finally:
         await conn.close()
+
+
+# ── Phase A/B/C/D — verdict, GH event, prior reviews, persona ────────────────
+
+
+@pytest.mark.asyncio
+async def test_verdict_approve_emits_gh_approve_event(tmp_path: Path) -> None:
+    """`verdict=APPROVE` with empty `comments[]` posts a GitHub APPROVE review."""
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "verdict": "APPROVE",
+                    "summary": (
+                        "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
+                        "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
+                        "— daeyeon-bot 🐥"
+                    ),
+                    "comments": [],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+        posted = fake_gh.posted_reviews()
+        assert len(posted) == 1
+        assert posted[0]["event"] == "APPROVE"
+        assert posted[0]["comments"] == []
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_verdict_pass_emits_gh_comment_event(tmp_path: Path) -> None:
+    """`verdict=PASS` with MINOR-only comments posts a GitHub COMMENT review."""
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "verdict": "PASS",
+                    "summary": (
+                        "**Verdict**: PASS — MINOR 1개. 별도 PR 가능.\n\n"
+                        "**개요**\n사소한 nit이 하나 있으나 머지 가능.\n\n"
+                        "— daeyeon-bot 🐥"
+                    ),
+                    "comments": [
+                        {
+                            "path": "src/foo.py",
+                            "line": 6,
+                            "body": "[MINOR] src/foo.py:6 — 상수 네이밍 권장.",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+        posted = fake_gh.posted_reviews()
+        assert len(posted) == 1
+        assert posted[0]["event"] == "COMMENT"
+        assert len(posted[0]["comments"]) == 1
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_verdict_approve_with_comments_rejected_by_schema(tmp_path: Path) -> None:
+    """Schema validator rejects `verdict=APPROVE` paired with non-empty `comments[]`."""
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    # Both attempts return the same inconsistent JSON — handler raises PermanentError.
+    bad = json.dumps(
+        {
+            "verdict": "APPROVE",
+            "summary": "Reviewed at deadbeef.",
+            "comments": [{"path": "src/foo.py", "line": 6, "body": "nit"}],
+        }
+    )
+    factory = FakeFactory(session=FakeClaudeSession(default=bad))
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        with pytest.raises(PermanentError, match="malformed review"):
+            await handler.handle(event, _ctx(factory))
+        # Nothing posted to GH on schema rejection.
+        assert fake_gh.posted_reviews() == []
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_prior_reviews_threaded_into_user_message(tmp_path: Path) -> None:
+    """Seeded prior reviews land in the user message under a `Prior reviews` section."""
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    fake_gh.seed_prior_reviews(
+        [
+            {
+                "id": 111,
+                "submitted_at": "2026-05-01T10:00:00Z",
+                "commit_id": "cafebabecafebabe",
+                "state": "COMMENTED",
+                "body": "**Verdict**: CONCERNS — MAJOR 1개. `src/foo.py:6` 에서 ...",
+                "inline_comments": [
+                    {
+                        "path": "src/foo.py",
+                        "line": 6,
+                        "body": "[MAJOR] src/foo.py:6 — 예전 round에서 지적한 점.",
+                    }
+                ],
+            }
+        ]
+    )
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps({"verdict": "APPROVE", "summary": "ok at deadbeef", "comments": []})
+        )
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+        user_msg = factory.session.calls[0]["prompt"]
+        assert isinstance(user_msg, str)
+        assert "Prior reviews" in user_msg
+        assert "Prior #1" in user_msg
+        assert "cafebabe" in user_msg  # truncated SHA visible
+        assert "src/foo.py:6" in user_msg  # inline comment rendered
+    finally:
+        await conn.close()
+
+
+def test_output_directive_mentions_evidence_discipline() -> None:
+    """The persona prompt must instruct: no hypothetical clauses, MINOR self-gate."""
+    from daeyeon_bot.handlers.pr_review_prompt import OUTPUT_DIRECTIVE
+
+    assert "추측 금지" in OUTPUT_DIRECTIVE or "no hypothetical" in OUTPUT_DIRECTIVE.lower()
+    assert "MINOR" in OUTPUT_DIRECTIVE
+    assert "APPROVE" in OUTPUT_DIRECTIVE
 
 
 # Awaitable is re-exported below so pyright's "unused import" doesn't fire

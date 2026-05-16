@@ -93,6 +93,14 @@ class _GhClient(Protocol):
 
     async def pr_get(self, repo: str, pr_number: int) -> dict[str, Any]: ...
     async def pr_files(self, repo: str, pr_number: int) -> list[dict[str, Any]]: ...
+    async def list_prior_reviews_with_comments(
+        self,
+        repo: str,
+        pr_number: int,
+        *,
+        login: str,
+        limit: int = ...,
+    ) -> list[dict[str, Any]]: ...
     async def post_review(
         self,
         repo: str,
@@ -101,6 +109,7 @@ class _GhClient(Protocol):
         commit_id: str,
         body: str,
         comments: list[dict[str, Any]],
+        event: str = ...,
         login: str | None = None,
     ) -> dict[str, Any]: ...
 
@@ -156,6 +165,13 @@ class PrReviewHandler:
             return await self._record_already_reviewed(sized, prior, now)
 
         await self.pause_guard()
+        # Best-effort prior-review fetch — when populated, the persona
+        # produces Resolved / Still open / New buckets. Errors swallowed
+        # inside the gh_cli wrapper return `[]`, so a flaky `gh api` call
+        # never blocks a review.
+        prior_reviews = await self.gh.list_prior_reviews_with_comments(
+            sized.repo, sized.pr_number, login=self.github_username, limit=2
+        )
         review = await self._call_claude_with_retry(
             ctx=ctx,
             system_prompt=build_system_prompt(sized.persona.body),
@@ -167,6 +183,7 @@ class PrReviewHandler:
                 author_login=sized.author_login,
                 head_sha=sized.head_sha,
                 files=sized.files,
+                prior_reviews=prior_reviews,
             ),
         )
 
@@ -386,12 +403,17 @@ class PrReviewHandler:
             )
             summary = header + "\n\n" + summary
 
+        # APPROVE → GH APPROVE event (counts toward branch protection);
+        # everything else → COMMENT. The schema validator already enforces
+        # `verdict=APPROVE ⇔ comments==[]`, so we trust the verdict field.
+        gh_event = "APPROVE" if review.verdict == "APPROVE" else "COMMENT"
         posted = await self.gh.post_review(
             sized.repo,
             sized.pr_number,
             commit_id=sized.head_sha,
             body=summary,
             comments=[inline_to_api(c) for c in kept],
+            event=gh_event,
             login=self.github_username,
         )
         new_review_id = _read_review_id(posted)

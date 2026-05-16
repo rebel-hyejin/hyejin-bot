@@ -54,6 +54,7 @@ class FakeGh:
     _search_set: set[tuple[str, int]] = field(default_factory=set)
     _posted_reviews: list[dict[str, Any]] = field(default_factory=list)
     _next_review_id: int = field(default=0)
+    _prior_reviews: list[dict[str, Any]] = field(default_factory=list)
 
     # ── Helpers used by tests ────────────────────────────────────────────
 
@@ -191,6 +192,7 @@ class FakeGh:
         commit_id: str,
         body: str,
         comments: list[dict[str, Any]],
+        event: str = "COMMENT",
         login: str | None = None,
     ) -> dict[str, Any]:
         del login  # the real wrapper uses this for 5xx dedup; fake never 5xx-loops
@@ -208,15 +210,33 @@ class FakeGh:
             "commit_id": commit_id,
             "body": body,
             "comments": list(comments),
+            "event": event,
             "review_id": review_id,
         }
         self._posted_reviews.append(record)
+        gh_state = "APPROVED" if event == "APPROVE" else "COMMENTED"
         return {
             "id": review_id,
             "submitted_at": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "state": "COMMENTED",
+            "state": gh_state,
             "html_url": f"https://github.com/{repo}/pull/{pr_number}#pullrequestreview-{review_id}",
         }
+
+    async def list_prior_reviews_with_comments(
+        self,
+        repo: str,
+        pr_number: int,
+        *,
+        login: str,
+        limit: int = 2,
+    ) -> list[dict[str, Any]]:
+        """Return seeded prior reviews — tests preload via `seed_prior_reviews(...)`."""
+        del repo, pr_number, login
+        return list(self._prior_reviews[:limit])
+
+    def seed_prior_reviews(self, reviews: list[dict[str, Any]]) -> None:
+        """Test seam — preload the prior-reviews list for the next handler call."""
+        self._prior_reviews = list(reviews)
 
 
 __all__ = ["FakeGh"]

@@ -11,13 +11,13 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.infra.pr_review_state import (
+from hyejin_bot.infra.pr_review_state import (
     StateRow,
     get_state,
     prune_dormant,
     upsert_observation,
 )
-from daeyeon_bot.infra.storage import apply_migrations, open_db
+from hyejin_bot.infra.storage import apply_migrations, open_db
 
 
 async def _migrated_db(tmp_path: Path) -> aiosqlite.Connection:

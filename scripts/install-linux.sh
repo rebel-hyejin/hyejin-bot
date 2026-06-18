@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Register daeyeon-bot as a systemd user unit (no root required).
+# Register hyejin-bot as a systemd user unit (no root required).
 #
 # Usage:  ./scripts/install-linux.sh /path/to/oauth_token
 # The credential file must be 0600. systemd copies it into the unit's
@@ -24,9 +24,9 @@ if [[ ! -f "$CREDENTIAL_PATH" ]]; then
 fi
 
 PREFIX="$(cd "$(dirname "$0")/.." && pwd)"
-STATE_DIR="${DAEYEON_BOT_STATE_DIR:-$HOME/.daeyeon-bot}"
+STATE_DIR="${DAEYEON_BOT_STATE_DIR:-$HOME/.hyejin-bot}"
 UNIT_DIR="$HOME/.config/systemd/user"
-UNIT_NAME="daeyeon-bot.service"
+UNIT_NAME="hyejin-bot.service"
 TARGET="$UNIT_DIR/$UNIT_NAME"
 TEMPLATE="$PREFIX/deploy/systemd/$UNIT_NAME"
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from daeyeon_bot.app import pause
+from hyejin_bot.app import pause
 
 
 def test_is_paused_false_when_missing(tmp_path: Path) -> None:

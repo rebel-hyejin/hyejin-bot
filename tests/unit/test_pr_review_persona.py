@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.core.errors import ValidationError
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.core.errors import ValidationError
+from hyejin_bot.infra.pr_review_persona import PersonaLoader
 from tests.fakes.pr_persona import materialize_persona
 
 _LONG_BODY = (
@@ -99,11 +99,11 @@ def test_empty_persona_name_raises(tmp_path: Path) -> None:
 def test_default_skills_root_points_at_repo_bundle() -> None:
     """No-arg PersonaLoader resolves to the repo's `.claude/skills/`.
 
-    Operators get the bundled `daeyeon-bot-code-review` persona without
+    Operators get the bundled `hyejin-bot-code-review` persona without
     having to symlink anything into `~/.claude/skills/`.
     """
     loader = PersonaLoader()
-    persona = loader.load("daeyeon-bot-code-review", min_chars=200)
-    assert persona.skill_dir.name == "daeyeon-bot-code-review"
+    persona = loader.load("hyejin-bot-code-review", min_chars=200)
+    assert persona.skill_dir.name == "hyejin-bot-code-review"
     assert persona.skill_dir.parent.name == "skills"
     assert persona.skill_dir.parent.parent.name == ".claude"

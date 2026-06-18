@@ -58,7 +58,7 @@ gh api /repos/{owner}/{repo}/pulls/42
   "user": { "login": "alice" },
   "draft": false,
   "state": "open",
-  "requested_reviewers": [ { "login": "daeyeon-lee" } ]
+  "requested_reviewers": [ { "login": "hyejin-lee" } ]
 }
 ```
 
@@ -100,11 +100,11 @@ gh api /user
 
 **Read shape (subset)**:
 ```jsonc
-{ "login": "daeyeon-lee" }
+{ "login": "hyejin-lee" }
 ```
 
 Run once at boot to populate `github.username` if not set in config. Cached
-for the daemon lifetime (re-fetched on `daeyeon-bot lifecycle reload-config`).
+for the daemon lifetime (re-fetched on `hyejin-bot lifecycle reload-config`).
 
 ### 5. `POST /repos/{owner}/{repo}/pulls/{n}/reviews` — post review (ONLY write)
 

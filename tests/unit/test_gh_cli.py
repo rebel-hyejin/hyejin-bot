@@ -21,13 +21,13 @@ from unittest.mock import patch
 
 import pytest
 
-from daeyeon_bot.core.errors import (
+from hyejin_bot.core.errors import (
     AuthError,
     PermanentError,
     RateLimitError,
     TransientError,
 )
-from daeyeon_bot.infra.gh_cli import GhCli
+from hyejin_bot.infra.gh_cli import GhCli
 
 
 class _FakeProc:
@@ -48,7 +48,7 @@ class _FakeProc:
 def _patch_subprocess(
     factory: Callable[..., Awaitable[_FakeProc]],
 ) -> AbstractContextManager[Any]:
-    return patch("daeyeon_bot.infra.gh_cli.asyncio.create_subprocess_exec", new=factory)
+    return patch("hyejin_bot.infra.gh_cli.asyncio.create_subprocess_exec", new=factory)
 
 
 def _ok_factory(payload: bytes) -> Callable[..., Awaitable[_FakeProc]]:
@@ -226,20 +226,20 @@ async def test_search_authored_builds_author_query_and_parses_items() -> None:
         )
 
     with _patch_subprocess(factory):
-        items = await cli.search_authored("daeyeon-lee", extra_query="user:rebellions-sw")
+        items = await cli.search_authored("hyejin-lee", extra_query="user:rebellions-sw")
 
     assert len(items) == 1
     assert items[0]["number"] == 7
     flat = " ".join(captured[0])
-    assert "q=is:open is:pr author:daeyeon-lee archived:false user:rebellions-sw" in flat
+    assert "q=is:open is:pr author:hyejin-lee archived:false user:rebellions-sw" in flat
 
 
 @pytest.mark.asyncio
 async def test_auth_user_returns_login() -> None:
     cli = GhCli()
-    with _patch_subprocess(_ok_factory(json.dumps({"login": "daeyeon-lee"}).encode())):
+    with _patch_subprocess(_ok_factory(json.dumps({"login": "hyejin-lee"}).encode())):
         login = await cli.auth_user()
-    assert login == "daeyeon-lee"
+    assert login == "hyejin-lee"
 
 
 @pytest.mark.asyncio
@@ -313,20 +313,20 @@ async def test_post_review_5xx_dedups_via_reviews_list() -> None:
         "id": 12345,
         "commit_id": "abc123",
         "submitted_at": "2026-05-04T14:31:02Z",
-        "user": {"login": "daeyeon-bot"},
+        "user": {"login": "hyejin-bot"},
         "state": "COMMENTED",
     }
     other_review = {
         "id": 999,
         "commit_id": "older_sha",
         "submitted_at": "2026-04-01T00:00:00Z",
-        "user": {"login": "daeyeon-bot"},
+        "user": {"login": "hyejin-bot"},
     }
     pending_review = {
         "id": 998,
         "commit_id": "abc123",
         "submitted_at": None,
-        "user": {"login": "daeyeon-bot"},
+        "user": {"login": "hyejin-bot"},
     }
 
     async def factory(*args: Any, **_kwargs: Any) -> _FakeProc:
@@ -343,7 +343,7 @@ async def test_post_review_5xx_dedups_via_reviews_list() -> None:
             commit_id="abc123",
             body="Summary",
             comments=[],
-            login="daeyeon-bot",
+            login="hyejin-bot",
         )
     assert out["id"] == 12345
     assert out["submitted_at"] == "2026-05-04T14:31:02Z"
@@ -382,7 +382,7 @@ async def test_post_review_5xx_no_match_propagates() -> None:
                 commit_id="abc123",
                 body="Summary",
                 comments=[],
-                login="daeyeon-bot",
+                login="hyejin-bot",
             )
 
 

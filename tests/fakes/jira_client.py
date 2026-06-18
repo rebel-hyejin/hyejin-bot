@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from daeyeon_bot.infra.jira_client import (
+from hyejin_bot.infra.jira_client import (
     FieldDiscovery,
     IssueDetail,
     IssueSummary,
@@ -55,8 +55,8 @@ class FakeJiraClient:
     ) -> None:
         self._identity = identity or JiraIdentity(
             account_id="557058:fake",
-            email_address="daeyeon.lee@rebellions.ai",
-            display_name="daeyeon",
+            email_address="hyejin.han@rebellions.ai",
+            display_name="hyejin",
         )
         self._field_discovery = field_discovery or FieldDiscovery(
             branch_field_id="customfield_10042",
@@ -179,7 +179,7 @@ class FakeJiraClient:
         del expand
         iss = self._issues.get(key)
         if iss is None:
-            from daeyeon_bot.core.errors import PermanentError
+            from hyejin_bot.core.errors import PermanentError
 
             raise PermanentError(f"jira GET /issue/{key}: HTTP 404 not found")
         return IssueDetail(

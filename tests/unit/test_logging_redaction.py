@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets as stdlib_secrets
 from typing import cast
 
-from daeyeon_bot.infra.logging import (
+from hyejin_bot.infra.logging import (
     REDACTED,
     redact_processor,
     redact_text,

@@ -8,7 +8,7 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.app.config import (
+from hyejin_bot.app.config import (
     Config,
     HandlerEntry,
     LoggingSection,
@@ -16,8 +16,8 @@ from daeyeon_bot.app.config import (
     RuntimeSection,
     SecretsSection,
 )
-from daeyeon_bot.app.prune import prune
-from daeyeon_bot.infra import storage
+from hyejin_bot.app.prune import prune
+from hyejin_bot.infra import storage
 
 
 @pytest.fixture

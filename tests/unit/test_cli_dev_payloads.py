@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from daeyeon_bot.cli._dev_payloads import (
+from hyejin_bot.cli._dev_payloads import (
     build_jira_triage_payload,
     build_pr_review_payload,
 )

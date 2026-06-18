@@ -1,0 +1,61 @@
+[Unit]
+Description=hyejin-bot — personal Claude bot daemon
+Documentation=https://github.com/rebellions-sw/hyejin-bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+# `uv run` is the Main PID; the actual python daemon is its child and is
+# the process that calls sd_notify(READY=1). NotifyAccess=all lets any
+# process in the unit's cgroup notify, which is what we need.
+NotifyAccess=all
+WatchdogSec=120
+TimeoutStopSec=180
+
+# `__INSTALL_PREFIX__` is rewritten by scripts/install-linux.sh.
+WorkingDirectory=__INSTALL_PREFIX__
+ExecStart=/usr/bin/env bash -lc 'umask 0077 && exec uv run hyejin-bot run'
+
+# Restart policy. exit 78 (EX_CONFIG, AuthError) is non-recoverable —
+# operator must rotate the token before the unit will start again.
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=78
+
+# Hardening — user-mode safe subset only.
+#
+# `systemctl --user` runs under a per-user manager that doesn't hold
+# CAP_SYS_ADMIN, so any directive that needs to shrink the capability
+# bounding set fails with status=218/CAPABILITIES ("Failed to drop
+# capabilities: Operation not permitted"). The directives below are the
+# ones that DON'T touch the bounding set and DO apply in user mode:
+#
+#   NoNewPrivileges, LockPersonality, RestrictRealtime,
+#   SystemCallArchitectures, PrivateTmp, ProtectSystem, ProtectHome.
+#
+# Intentionally NOT set here (they break user services):
+#   PrivateDevices, ProtectKernelTunables, ProtectKernelModules,
+#   ProtectControlGroups, RestrictSUIDSGID, MemoryDenyWriteExecute,
+#   RestrictNamespaces, SystemCallFilter.
+#
+# If you ever run this as a system unit (`systemctl enable` as root), put
+# the full hardening set back — it works there.
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+
+# State dir — only place the unit can write.
+ReadWritePaths=__STATE_DIR__
+
+# Token via systemd LoadCredential (preferred over env). The unit loads a
+# 0600 file from the credential store; the daemon reads it through
+# secrets.provider='file' with file_path=$CREDENTIALS_DIRECTORY/oauth_token.
+LoadCredential=oauth_token:__CREDENTIAL_PATH__
+
+[Install]
+WantedBy=default.target

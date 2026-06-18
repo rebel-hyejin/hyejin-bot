@@ -8,14 +8,14 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.infra.jira_triage_audit import (
+from hyejin_bot.infra.jira_triage_audit import (
     find_latest,
     insert_audit,
     list_for_issue,
     list_recent,
     record_supersede,
 )
-from daeyeon_bot.infra.storage import apply_migrations, open_db
+from hyejin_bot.infra.storage import apply_migrations, open_db
 
 
 async def _seed_event(conn: aiosqlite.Connection, event_id: str, dedup: str) -> None:
@@ -60,7 +60,7 @@ async def test_insert_posted_row_round_trips(tmp_path: Path) -> None:
             posted_at=posted,
             summary_chars=512,
             evidence_count=3,
-            persona_skill="daeyeon-bot-jira-triage",
+            persona_skill="hyejin-bot-jira-triage",
             persona_mtime_ns=1234567890,
         )
         assert rid > 0

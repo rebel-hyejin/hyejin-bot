@@ -18,11 +18,11 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from daeyeon_bot.app.lock import AlreadyRunningError
-from daeyeon_bot.cli import lifecycle as cli_lifecycle
-from daeyeon_bot.cli.lifecycle import app as lifecycle_app
-from daeyeon_bot.cli.main import app as main_app
-from daeyeon_bot.core.errors import AuthError, ConfigError
+from hyejin_bot.app.lock import AlreadyRunningError
+from hyejin_bot.cli import lifecycle as cli_lifecycle
+from hyejin_bot.cli.lifecycle import app as lifecycle_app
+from hyejin_bot.cli.main import app as main_app
+from hyejin_bot.core.errors import AuthError, ConfigError
 
 
 def _write_config(tmp_path: Path) -> Path:
@@ -84,7 +84,7 @@ def test_lifecycle_stop_no_pidfile_exits_one(tmp_path: Path) -> None:
 
 def test_lifecycle_stop_unreadable_pidfile_exits_one(tmp_path: Path) -> None:
     cfg = _write_config(tmp_path)
-    (tmp_path / "daeyeon-bot.pid").write_text("not-an-int\n", encoding="utf-8")
+    (tmp_path / "hyejin-bot.pid").write_text("not-an-int\n", encoding="utf-8")
     runner = CliRunner()
     result = runner.invoke(lifecycle_app, ["stop", "--config", str(cfg)])
     assert result.exit_code == 1
@@ -95,7 +95,7 @@ def test_lifecycle_stop_stale_pidfile_exits_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = _write_config(tmp_path)
-    (tmp_path / "daeyeon-bot.pid").write_text("99999\n", encoding="utf-8")
+    (tmp_path / "hyejin-bot.pid").write_text("99999\n", encoding="utf-8")
 
     def _kill_missing(pid: int, sig: int) -> None:
         del pid, sig
@@ -112,7 +112,7 @@ def test_lifecycle_stop_sends_sigterm_to_recorded_pid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = _write_config(tmp_path)
-    (tmp_path / "daeyeon-bot.pid").write_text("4242\n", encoding="utf-8")
+    (tmp_path / "hyejin-bot.pid").write_text("4242\n", encoding="utf-8")
 
     sent: list[tuple[int, int]] = []
 
@@ -131,7 +131,7 @@ def test_lifecycle_reload_config_signals_and_logs_supervisor_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = _write_config(tmp_path)
-    (tmp_path / "daeyeon-bot.pid").write_text("4242\n", encoding="utf-8")
+    (tmp_path / "hyejin-bot.pid").write_text("4242\n", encoding="utf-8")
 
     sent: list[tuple[int, int]] = []
 
@@ -166,13 +166,13 @@ def test_lifecycle_run_already_running_exits_75(
     cfg = _write_config(tmp_path)
 
     async def _raise(_options: Any) -> None:
-        raise AlreadyRunningError(path=tmp_path / "daeyeon-bot.pid", holder_pid=4242)
+        raise AlreadyRunningError(path=tmp_path / "hyejin-bot.pid", holder_pid=4242)
 
     _patch_boot(monkeypatch, _raise)
     runner = CliRunner()
     result = runner.invoke(main_app, ["run", "--config", str(cfg)])
     assert result.exit_code == 75
-    assert "daeyeon-bot:" in result.output
+    assert "hyejin-bot:" in result.output
 
 
 def test_lifecycle_run_auth_error_exits_78(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

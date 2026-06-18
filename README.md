@@ -1,10 +1,15 @@
-# daeyeon-bot
+# hyejin-bot
 
-> Personal Claude bot **daemon** for one operator (daeyeon.lee@rebellions.ai).
+> Personal Claude bot **daemon** for one operator (hyejin.han@rebellions.ai).
 > Runs 24/7 on macOS (launchd) or a Linux server (systemd --user), wakes up
 > on triggers, dispatches each event to a handler, and calls Claude on the
 > operator's Pro/Max OAuth subscription. **Single-tenant, single-process,
 > single-host.** Not a SaaS, not for anyone else.
+
+> Fork of [`rebel-daeyeonlee/daeyeon-bot`](https://github.com/rebel-daeyeonlee/daeyeon-bot)
+> — attribution preserved. Upstream code-review persona kept under
+> `.claude/skills/upstream-code-review-reference/` as reference;
+> hyejin's persona at `.claude/skills/hyejin-bot-code-review/`.
 
 ## Status
 
@@ -76,7 +81,7 @@ and either re-queues it (idempotent handler) or moves it to `dead_letter`
 - **At-least-once delivery.** A handler is invoked one or more times for
   every event. Idempotency is the handler's job; the dispatcher only
   guarantees no row is lost.
-- **Single instance.** `~/.daeyeon-bot/daeyeon-bot.pid` + `flock(2)`. Trying
+- **Single instance.** `~/.hyejin-bot/hyejin-bot.pid` + `flock(2)`. Trying
   to start a second daemon exits 75.
 - **2-phase shutdown** (180 s budget). Phase A stops claiming new rows,
   Phase B drains in-flight handlers (≤120 s), Phase C checkpoints WAL and
@@ -107,9 +112,9 @@ just run                                   # foreground daemon, Ctrl-C exits
 In another terminal — fire one event end-to-end:
 
 ```bash
-daeyeon-bot dev fire manual -m 'hello'     # writes event + enqueues handlers
-daeyeon-bot inspect events ls              # see the row that was just written
-daeyeon-bot inspect status                 # outbox depths + in-flight + quarantine
+hyejin-bot dev fire manual -m 'hello'     # writes event + enqueues handlers
+hyejin-bot inspect events ls              # see the row that was just written
+hyejin-bot inspect status                 # outbox depths + in-flight + quarantine
 ```
 
 ---
@@ -118,9 +123,9 @@ daeyeon-bot inspect status                 # outbox depths + in-flight + quarant
 
 ### macOS (launchd)
 ```bash
-just install-mac          # ~/Library/LaunchAgents/ai.rebellions.daeyeon-bot.plist
-launchctl list | grep daeyeon-bot    # PID present → alive
-tail -f ~/.daeyeon-bot/launchd.err.log
+just install-mac          # ~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist
+launchctl list | grep hyejin-bot    # PID present → alive
+tail -f ~/.hyejin-bot/launchd.err.log
 ```
 KeepAlive restarts the process if it dies. `RestartPreventExitStatus=78`
 (via the wrapper) means an `AuthError` correctly halts the loop until the
@@ -129,9 +134,9 @@ operator rotates the token.
 ### Linux server (systemd --user)
 ```bash
 umask 077
-printf '%s' '<token>' > ~/.config/daeyeon-bot/oauth_token
-just install-linux ~/.config/daeyeon-bot/oauth_token
-journalctl --user -u daeyeon-bot -f
+printf '%s' '<token>' > ~/.config/hyejin-bot/oauth_token
+just install-linux ~/.config/hyejin-bot/oauth_token
+journalctl --user -u hyejin-bot -f
 ```
 Type=notify + `WatchdogSec=120` ties our heartbeat into systemd's own
 watchdog.
@@ -145,7 +150,7 @@ token revocation, hung daemon, lock conflict, disk full) live in
 ## Layout
 
 ```
-src/daeyeon_bot/
+src/hyejin_bot/
 ├── core/        # pure domain — events, results, manifests, protocols, errors
 ├── infra/       # adapters — sqlite, secrets, structlog, claude SDK, migrations
 ├── triggers/    # how events come in (manual today; cron / webhook / slack later)
@@ -171,16 +176,16 @@ just status                # outbox depths + quarantined triggers + pidfile
 # Operations
 just backup                # hot SQLite snapshot under <state_dir>/backups/
 just prune                 # apply retention (events 90d, runs 30d, dedup ttl, …)
-daeyeon-bot ops replay <event_id> --confirm
-daeyeon-bot lifecycle pause | resume
+hyejin-bot ops replay <event_id> --confirm
+hyejin-bot lifecycle pause | resume
 
 # Inspection
-daeyeon-bot inspect status                 # outbox depths + in-flight + quarantine
-daeyeon-bot inspect events ls              # recent events
-daeyeon-bot inspect events get <event_id>  # full event + outbox/runs history
-daeyeon-bot inspect handlers ls            # registered handlers + manifests
-daeyeon-bot inspect pr-review              # last PR-review attempts (audit table)
-daeyeon-bot inspect ratelimit              # token-bucket state for each bucket
+hyejin-bot inspect status                 # outbox depths + in-flight + quarantine
+hyejin-bot inspect events ls              # recent events
+hyejin-bot inspect events get <event_id>  # full event + outbox/runs history
+hyejin-bot inspect handlers ls            # registered handlers + manifests
+hyejin-bot inspect pr-review              # last PR-review attempts (audit table)
+hyejin-bot inspect ratelimit              # token-bucket state for each bucket
 ```
 
 ## Exit codes wrappers care about

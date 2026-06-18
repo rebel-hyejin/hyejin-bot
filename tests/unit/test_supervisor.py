@@ -9,7 +9,7 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.app.supervisor import (
+from hyejin_bot.app.supervisor import (
     DEFAULT_THRESHOLD,
     DEFAULT_WINDOW,
     FailureWindow,
@@ -18,7 +18,7 @@ from daeyeon_bot.app.supervisor import (
     list_quarantined,
     unquarantine,
 )
-from daeyeon_bot.infra import storage
+from hyejin_bot.infra import storage
 
 
 @pytest.fixture

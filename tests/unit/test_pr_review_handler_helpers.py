@@ -11,9 +11,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from daeyeon_bot.core.errors import ValidationError
-from daeyeon_bot.core.events import Event, make_event
-from daeyeon_bot.handlers.pr_review import (
+from hyejin_bot.core.errors import ValidationError
+from hyejin_bot.core.events import Event, make_event
+from hyejin_bot.handlers.pr_review import (
     _append_folded_bullets,  # pyright: ignore[reportPrivateUsage]
     _parse_payload,  # pyright: ignore[reportPrivateUsage]
     _read_author,  # pyright: ignore[reportPrivateUsage]
@@ -23,8 +23,8 @@ from daeyeon_bot.handlers.pr_review import (
     _read_submitted_at,  # pyright: ignore[reportPrivateUsage]
     _strip_code_fence,  # pyright: ignore[reportPrivateUsage]
 )
-from daeyeon_bot.handlers.pr_review_render import inline_to_api, render_user_message
-from daeyeon_bot.handlers.pr_review_schemas import InlineComment
+from hyejin_bot.handlers.pr_review_render import inline_to_api, render_user_message
+from hyejin_bot.handlers.pr_review_schemas import InlineComment
 
 # ── _parse_payload ─────────────────────────────────────────────────────────
 
@@ -204,16 +204,16 @@ def test_append_folded_bullets_inserts_before_signoff() -> None:
     """Sign-off must remain the last non-empty line — `_OUTPUT_DIRECTIVE`
     enforces this on Claude's side, the helper must not break it after.
     """
-    summary = "Verdict: PASS — looks fine.\n\n개요\n간단한 변경.\n\n— daeyeon-bot 🐥"
+    summary = "Verdict: PASS — looks fine.\n\n개요\n간단한 변경.\n\n— hyejin-bot 🐥"
     out = _append_folded_bullets(
         summary,
         [InlineComment(path="a.py", line=3, side="RIGHT", body="nit")],
     )
     last_non_empty = next(line for line in reversed(out.split("\n")) if line.strip())
-    assert last_non_empty == "— daeyeon-bot 🐥"
+    assert last_non_empty == "— hyejin-bot 🐥"
     assert "- [a.py near L3] nit" in out
     bullets_idx = out.index("- [a.py near L3]")
-    signoff_idx = out.index("— daeyeon-bot 🐥")
+    signoff_idx = out.index("— hyejin-bot 🐥")
     assert bullets_idx < signoff_idx
 
 
@@ -222,14 +222,14 @@ def test_append_folded_bullets_handles_role_primed_signoff() -> None:
         "Verdict: CONCERNS — major fix 권장.\n\n"
         "**Reviewer**: as Senior SRE\n\n"
         "개요\n변경 요약.\n\n"
-        "— daeyeon-bot 🐥 (as Senior SRE)"
+        "— hyejin-bot 🐥 (as Senior SRE)"
     )
     out = _append_folded_bullets(
         summary,
         [InlineComment(path="b.py", line=7, side="RIGHT", body="evidence")],
     )
     last_non_empty = next(line for line in reversed(out.split("\n")) if line.strip())
-    assert last_non_empty == "— daeyeon-bot 🐥 (as Senior SRE)"
+    assert last_non_empty == "— hyejin-bot 🐥 (as Senior SRE)"
     assert "- [b.py near L7] evidence" in out
 
 

@@ -282,7 +282,7 @@ got a clear answer).
 
 ## R9. Force re-review (manual override at same SHA)
 
-**Decision**: CLI command `daeyeon-bot dev fire pr-review --pr <url|owner/repo#n>
+**Decision**: CLI command `hyejin-bot dev fire pr-review --pr <url|owner/repo#n>
 [--force]`. Without `--force`, the handler short-circuits with `Ack` and a log
 line `pr_review.skip_already_reviewed` if `pr_review_audit` has a row for that
 `(repo, pr, head_sha, request_gen)`. With `--force`, the handler increments a
@@ -350,8 +350,8 @@ GitHub PAT/Anthropic OAuth patterns plus a high-entropy fallback. That handles
 accidental secret leakage from a diff into a log line.
 
 No external metrics export in v1. Operators inspect via
-`daeyeon-bot inspect status` + the new `pr_review_audit` table queryable
-through `daeyeon-bot inspect pr-review` (a thin new sub-command).
+`hyejin-bot inspect status` + the new `pr_review_audit` table queryable
+through `hyejin-bot inspect pr-review` (a thin new sub-command).
 
 **Rationale**:
 - Aligns with FR-015 (no secrets/paths in posted content) and the daemon's

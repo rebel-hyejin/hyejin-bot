@@ -9,8 +9,8 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.infra import outbox, storage
+from hyejin_bot.core.events import make_event
+from hyejin_bot.infra import outbox, storage
 
 
 @pytest.fixture

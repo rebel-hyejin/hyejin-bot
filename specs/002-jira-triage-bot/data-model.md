@@ -14,7 +14,7 @@ Linear, additive, never edited in place (per `CLAUDE.md` §Add a SQL column).
 Bumps `meta.schema_version` to `5`.
 
 ```sql
--- daeyeon-bot — schema_version=5.
+-- hyejin-bot — schema_version=5.
 -- Adds the Jira triage bot's per-issue assignment-state tracking and per-event audit log.
 -- Mirrors the gh_review_requested_state pattern (see 002_*.sql) — per-issue `in_pending_set`
 -- flag + monotonic `assignment_gen` counter for re-entry detection.
@@ -146,7 +146,7 @@ race-safe enqueue path. Polling-trigger duplicate observations of the same
 
 ---
 
-## 3. In-memory domain types (`src/daeyeon_bot/core/jira_triage/`)
+## 3. In-memory domain types (`src/hyejin_bot/core/jira_triage/`)
 
 Pure dataclasses, stdlib only. No I/O, no SDK references, no `httpx`/`asyncssh`.
 
@@ -444,7 +444,7 @@ observes. It just seeds `(issue_key, in_pending_set=1, assignment_gen=1,
 last_observed_at=now)` rows for everything in `page_now` and exits the
 cycle. This prevents thundering-herd behavior on day-1 deploy — the bot
 won't retroactively triage 30 tickets that have been sitting in
-daeyeon's queue for weeks.
+hyejin's queue for weeks.
 
 A boolean flag `jira_assigned_state_seeded` is stored as a single row in
 `meta` table (set to `'1'` after the cold-start seed completes) so a
@@ -514,7 +514,7 @@ dedup_ttl_seconds = 86400
 concurrency = 1
 accepts = ["jira.assigned", "jira.triage.manual"]
 allowed_projects = ["SSWCI"]
-persona_skill = "daeyeon-bot-jira-triage"
+persona_skill = "hyejin-bot-jira-triage"
 min_persona_chars = 200
 timeout_seconds = 600                # per-event wall-clock
 ssw_bundle_path = "var/ssw-bundle"   # project-root-relative; absolute path also accepted
@@ -556,5 +556,5 @@ The new pydantic models (`JiraConfig`, `LokiConfig`,
   on a partially-migrated DB is safe.
 - The `core/persona.py` refactor (R6) re-exports `Persona` from
   `core/pr_review/__init__.py` for one release, so callers of
-  `from daeyeon_bot.core.pr_review.persona import Persona` continue to
+  `from hyejin_bot.core.pr_review.persona import Persona` continue to
   work.

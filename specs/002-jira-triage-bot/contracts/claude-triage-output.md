@@ -11,7 +11,7 @@ with Pydantic and forward it to Jira's REST API as a wiki-markup comment.
 > 4-section wiki-markup comment (Summary / Evidences / Analysis / Action
 > Items) with `{code:title=…}` log attachments. The schema snippets below
 > still reference `summary_md` for historical context; the authoritative
-> shape is in `src/daeyeon_bot/handlers/jira_triage_schemas.py:TriageOutput`.
+> shape is in `src/hyejin_bot/handlers/jira_triage_schemas.py:TriageOutput`.
 
 ---
 

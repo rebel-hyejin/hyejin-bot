@@ -7,7 +7,7 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.infra import storage
+from hyejin_bot.infra import storage
 
 
 @pytest.fixture

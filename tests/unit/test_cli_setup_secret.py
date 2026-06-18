@@ -1,4 +1,4 @@
-"""`daeyeon-bot lifecycle setup-secret <name>` unit tests."""
+"""`hyejin-bot lifecycle setup-secret <name>` unit tests."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from daeyeon_bot.cli import lifecycle as _lifecycle
-from daeyeon_bot.cli.lifecycle import app
+from hyejin_bot.cli import lifecycle as _lifecycle
+from hyejin_bot.cli.lifecycle import app
 
 # Private helper — accessed via module attribute for test only.
 _is_valid_secret_name = _lifecycle._is_valid_secret_name  # pyright: ignore[reportPrivateUsage]
@@ -30,7 +30,7 @@ state_dir = {str(state_dir)!r}
 
 [secrets]
 provider = "{provider}"
-keychain_service = "daeyeon-bot-test"
+keychain_service = "hyejin-bot-test"
 {file_kw}""".lstrip(),
         encoding="utf-8",
     )
@@ -65,7 +65,7 @@ def test_invalid_name_argv_exits_with_code_2(tmp_path: Path) -> None:
 
 def test_keychain_provider_calls_set_password(tmp_path: Path) -> None:
     cfg_path = _write_config(tmp_path, provider="keychain")
-    with patch("daeyeon_bot.cli.lifecycle.keyring.set_password") as set_pw:
+    with patch("hyejin_bot.cli.lifecycle.keyring.set_password") as set_pw:
         result = runner.invoke(
             app,
             [
@@ -78,7 +78,7 @@ def test_keychain_provider_calls_set_password(tmp_path: Path) -> None:
             ],
         )
     assert result.exit_code == 0, result.output
-    set_pw.assert_called_once_with("daeyeon-bot-test", "jira_api_token", "atok-abc")
+    set_pw.assert_called_once_with("hyejin-bot-test", "jira_api_token", "atok-abc")
     assert "stashed: keychain" in result.output
 
 
@@ -87,7 +87,7 @@ def test_keychain_backend_error_surfaced(tmp_path: Path) -> None:
 
     cfg_path = _write_config(tmp_path, provider="keychain")
     with patch(
-        "daeyeon_bot.cli.lifecycle.keyring.set_password",
+        "hyejin_bot.cli.lifecycle.keyring.set_password",
         side_effect=keyring.errors.KeyringError("no backend"),
     ):
         result = runner.invoke(
@@ -111,7 +111,7 @@ def test_file_provider_creates_0600_file(tmp_path: Path) -> None:
             "setup-secret",
             "jira_user",
             "--value",
-            "daeyeon.lee@rebellions.ai",
+            "hyejin.han@rebellions.ai",
             "--config",
             str(cfg_path),
         ],
@@ -120,7 +120,7 @@ def test_file_provider_creates_0600_file(tmp_path: Path) -> None:
 
     written = tmp_path / "secrets" / "jira_user"
     assert written.exists()
-    assert written.read_text(encoding="utf-8").rstrip("\n") == "daeyeon.lee@rebellions.ai"
+    assert written.read_text(encoding="utf-8").rstrip("\n") == "hyejin.han@rebellions.ai"
     mode = stat.S_IMODE(written.stat().st_mode)
     assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
     assert "stashed:" in result.output
@@ -196,14 +196,14 @@ def test_empty_value_rejected(tmp_path: Path) -> None:
 
 def test_interactive_prompt_reads_hidden_value(tmp_path: Path) -> None:
     cfg_path = _write_config(tmp_path, provider="keychain")
-    with patch("daeyeon_bot.cli.lifecycle.keyring.set_password") as set_pw:
+    with patch("hyejin_bot.cli.lifecycle.keyring.set_password") as set_pw:
         result = runner.invoke(
             app,
             ["setup-secret", "jira_api_token", "--config", str(cfg_path)],
             input="atok-from-prompt\n",
         )
     assert result.exit_code == 0, result.output
-    set_pw.assert_called_once_with("daeyeon-bot-test", "jira_api_token", "atok-from-prompt")
+    set_pw.assert_called_once_with("hyejin-bot-test", "jira_api_token", "atok-from-prompt")
 
 
 # ── Round-trip with FileSecrets.load_secret ─────────────────────────────────
@@ -211,7 +211,7 @@ def test_interactive_prompt_reads_hidden_value(tmp_path: Path) -> None:
 
 def test_stashed_file_round_trips_through_FileSecrets(tmp_path: Path) -> None:
     """Stash via CLI, then read back via the same provider the daemon uses."""
-    from daeyeon_bot.infra.secrets import FileSecrets
+    from hyejin_bot.infra.secrets import FileSecrets
 
     file_path = tmp_path / "secrets" / "oauth_token"
     # OAuth file itself doesn't need to exist for load_secret(name).

@@ -73,7 +73,7 @@ The loader (`infra/pr_review_persona.py:load_active_persona`) MUST validate:
 | Body has at least one non-whitespace line | placeholder content | `DeadLetter("persona unavailable: body is whitespace-only")` |
 
 Any failure returns a `DeadLetter` from the handler — no generic fallback
-review is ever generated. Operator must repair the persona and `daeyeon-bot
+review is ever generated. Operator must repair the persona and `hyejin-bot
 ops replay --confirm` to resume.
 
 ---
@@ -138,7 +138,7 @@ processor as the safety net for output.
 ```markdown
 ---
 name: pr-review
-description: Default PR review persona for daeyeon-bot.
+description: Default PR review persona for hyejin-bot.
 ---
 
 You are reviewing GitHub pull requests as Daeyeon. Your job is to leave

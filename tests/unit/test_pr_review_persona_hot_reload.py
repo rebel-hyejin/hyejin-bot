@@ -12,7 +12,7 @@ import os
 import time
 from pathlib import Path
 
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.infra.pr_review_persona import PersonaLoader
 from tests.fakes.pr_persona import materialize_persona
 
 _BODY_A = (

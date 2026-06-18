@@ -1,6 +1,6 @@
 # DEPLOY.md — Fresh-machine operator guide
 
-> Audience: the operator (daeyeon.lee@rebellions.ai) deploying daeyeon-bot
+> Audience: the operator (hyejin.han@rebellions.ai) deploying hyejin-bot
 > to a new host. The bot is single-tenant + single-process; one daemon
 > per host. This document is the procedure: prerequisites → token →
 > install → smoke test → daily cheatsheet → upgrade → uninstall.
@@ -16,9 +16,9 @@
 | Question | Answer to write down |
 |---|---|
 | Mac (laptop) or Linux server? | _________ |
-| What's the operator UNIX user? | (e.g. `daeyeon.lee` — `whoami`) |
-| What's `$HOME`? | (e.g. `/home/ldap/daeyeon.lee`) |
-| Where will state live? | default `~/.daeyeon-bot/`; override with `[runtime].state_dir` |
+| What's the operator UNIX user? | (e.g. `hyejin.han` — `whoami`) |
+| What's `$HOME`? | (e.g. `/home/ldap/hyejin.han`) |
+| Where will state live? | default `~/.hyejin-bot/`; override with `[runtime].state_dir` |
 | Which GitHub user will the bot review as? | (your operator account) |
 | Which Claude account holds the Pro/Max subscription? | (the one paying for the OAuth token) |
 
@@ -87,8 +87,8 @@ uv --version && gh --version && jq --version && sqlite3 --version
 
 ```bash
 mkdir -p ~/workspace && cd ~/workspace
-git clone git@github.com:rebellions-sw/daeyeon-bot.git
-cd daeyeon-bot
+git clone git@github.com:rebellions-sw/hyejin-bot.git
+cd hyejin-bot
 just sync                                # uv pulls deps + pins Python 3.12
 just check                               # lint + typecheck + tests must all pass
 ```
@@ -108,13 +108,13 @@ Edit `config.toml`. The defaults work for most boxes, but verify:
 
 | Key | What it controls | Action |
 |---|---|---|
-| `[runtime].state_dir` | Where state.db / pidfile / heartbeat / backups live. | Default `~/.daeyeon-bot`. Change only if `~` is networked / slow / shared. |
+| `[runtime].state_dir` | Where state.db / pidfile / heartbeat / backups live. | Default `~/.hyejin-bot`. Change only if `~` is networked / slow / shared. |
 | `[secrets].provider` | `keychain` (Mac) \| `file` (Linux) \| `env` (dev only). | Set per OS. |
-| `[secrets].file_path` | Linux only: path to the 0600 credential file. | Default `/etc/daeyeon-bot/oauth_token`; you'll likely want `~/.config/daeyeon-bot/oauth_token` so you don't need root. Update both this **and** the path you'll pass to `install-linux.sh` so they match. |
+| `[secrets].file_path` | Linux only: path to the 0600 credential file. | Default `/etc/hyejin-bot/oauth_token`; you'll likely want `~/.config/hyejin-bot/oauth_token` so you don't need root. Update both this **and** the path you'll pass to `install-linux.sh` so they match. |
 | `[claude].model` | Which model the daemon calls. | Leave at `claude-opus-4-7` unless you have a reason. |
 | `[github].username` | Operator's GitHub login. | Set explicitly (avoids a network roundtrip at boot). Find with `gh api user -q .login`. |
 | `[handlers.pr_review].enabled` | Master switch for PR review. | `true` to ship. `false` if you want to deploy the daemon first and enable later. |
-| `[handlers.pr_review].persona_skill` | Which directory under `<skills_root>/` contains `SKILL.md`. | Default `daeyeon-bot-code-review` (ships with the repo). |
+| `[handlers.pr_review].persona_skill` | Which directory under `<skills_root>/` contains `SKILL.md`. | Default `hyejin-bot-code-review` (ships with the repo). |
 | `[handlers.pr_review].skills_root` | Where to look up the persona. | Commented-out by default → uses repo-bundled `.claude/skills/`. Set to `~/.claude/skills` if you want to edit the persona without touching the repo. |
 | `[handlers.pr_review.size_budget]` | Per-PR diff cap. | `max_lines=1000`, `max_files=50`. Bigger PRs are skipped unless `--force`. |
 | `[handlers.pr_review].allowed_repos` | Security boundary — `fnmatch` globs over `owner/name`. | Empty list (default) = no filter (legacy). Once set, blocked PRs land as `skipped_disallowed_repo`; `--force` does **not** bypass. |
@@ -146,17 +146,17 @@ Follow the browser flow. The CLI prints a token starting with `sk-ant-oat…`.
 just setup-token
 # Prompts: paste the token. The script replaces any existing entry.
 # Verify:
-security find-generic-password -s daeyeon-bot -a oauth_token -w
+security find-generic-password -s hyejin-bot -a oauth_token -w
 ```
 
 ### 3.2.b Linux — write a 0600 file
 
 ```bash
-mkdir -p ~/.config/daeyeon-bot
+mkdir -p ~/.config/hyejin-bot
 umask 077
-printf '%s' '<paste-token-here>' > ~/.config/daeyeon-bot/oauth_token
-chmod 600 ~/.config/daeyeon-bot/oauth_token
-ls -l ~/.config/daeyeon-bot/oauth_token   # mode must be -rw-------
+printf '%s' '<paste-token-here>' > ~/.config/hyejin-bot/oauth_token
+chmod 600 ~/.config/hyejin-bot/oauth_token
+ls -l ~/.config/hyejin-bot/oauth_token   # mode must be -rw-------
 ```
 
 The `install-linux.sh` script refuses to install if the file isn't 0600.
@@ -200,7 +200,7 @@ on every event by mtime, so editing it does NOT require a restart.
 
 ### 5.1 Repo-bundled (default)
 
-`.claude/skills/daeyeon-bot-code-review/SKILL.md` ships with the repo
+`.claude/skills/hyejin-bot-code-review/SKILL.md` ships with the repo
 and is what the default config uses. Don't edit it casually — it's
 checked in. To customise, copy it to your home skills dir (next).
 
@@ -208,14 +208,14 @@ checked in. To customise, copy it to your home skills dir (next).
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -r .claude/skills/daeyeon-bot-code-review ~/.claude/skills/
+cp -r .claude/skills/hyejin-bot-code-review ~/.claude/skills/
 # Then in config.toml:
 #   [handlers.pr_review]
 #   skills_root = "~/.claude/skills"
-#   persona_skill = "daeyeon-bot-code-review"
+#   persona_skill = "hyejin-bot-code-review"
 ```
 
-Now `~/.claude/skills/daeyeon-bot-code-review/SKILL.md` is your private
+Now `~/.claude/skills/hyejin-bot-code-review/SKILL.md` is your private
 override. The daemon picks up edits on the next event without a restart.
 
 The handler refuses to run if `SKILL.md` is missing, unreadable, or
@@ -228,7 +228,7 @@ shorter than `min_persona_chars` (default 200). Failures land as
 
 ```bash
 just migrate
-sqlite3 ~/.daeyeon-bot/state.db "SELECT value FROM meta WHERE key='schema_version';"
+sqlite3 ~/.hyejin-bot/state.db "SELECT value FROM meta WHERE key='schema_version';"
 # → expect '4' on this revision (001 init, 002 PR review, 003 ratelimit
 #   seed, 004 skipped_disallowed_repo audit status).
 ```
@@ -236,11 +236,11 @@ sqlite3 ~/.daeyeon-bot/state.db "SELECT value FROM meta WHERE key='schema_versio
 State directory layout after first boot:
 
 ```
-~/.daeyeon-bot/
+~/.hyejin-bot/
 ├── state.db          # primary store (WAL)
 ├── state.db-wal
 ├── state.db-shm
-├── daeyeon-bot.pid   # pidfile + flock (single-instance enforcement)
+├── hyejin-bot.pid   # pidfile + flock (single-instance enforcement)
 ├── heartbeat         # mtime touched every tick — liveness signal
 ├── PAUSE             # absent by default; presence blocks Claude calls
 ├── backups/          # state-<UTC>.db snapshots from `just backup`
@@ -267,15 +267,15 @@ just run
 In another terminal — fire one manual event end to end:
 
 ```bash
-daeyeon-bot dev fire manual -m 'hello'
-daeyeon-bot inspect events ls --n 5
-daeyeon-bot inspect tail --n 5           # echo handler should show acked
+hyejin-bot dev fire manual -m 'hello'
+hyejin-bot inspect events ls --n 5
+hyejin-bot inspect tail --n 5           # echo handler should show acked
 ```
 
 PR-review dry run (does NOT write to GitHub):
 
 ```bash
-daeyeon-bot dev fire-pr-review --pr 'rebellions-sw/some-repo#42' --dry-run
+hyejin-bot dev fire-pr-review --pr 'rebellions-sw/some-repo#42' --dry-run
 # Prints the event JSON + the routing target. Confirms gh + config wiring.
 ```
 
@@ -283,9 +283,9 @@ PR-review live (re-runs at the same SHA, appends a "Supersedes review"
 header):
 
 ```bash
-daeyeon-bot dev fire-pr-review --pr 'rebellions-sw/some-repo#42' --force
+hyejin-bot dev fire-pr-review --pr 'rebellions-sw/some-repo#42' --force
 # Then watch the next heartbeat — the dispatcher claims the row.
-daeyeon-bot inspect pr-review --pr 'rebellions-sw/some-repo#42'
+hyejin-bot inspect pr-review --pr 'rebellions-sw/some-repo#42'
 # Should show status=posted with a review_id.
 ```
 
@@ -299,13 +299,13 @@ If everything's green, stop the foreground daemon and continue.
 
 ```bash
 just install-mac
-launchctl list | grep daeyeon-bot        # PID present → alive
-tail -f ~/.daeyeon-bot/launchd.err.log
+launchctl list | grep hyejin-bot        # PID present → alive
+tail -f ~/.hyejin-bot/launchd.err.log
 ```
 
 The plist sets `KeepAlive=true` (auto-restart on crash) and
 `ThrottleInterval=10s` so an `AuthError` (exit 78) loop is rate-limited.
-Logs are at `~/.daeyeon-bot/launchd.{out,err}.log`.
+Logs are at `~/.hyejin-bot/launchd.{out,err}.log`.
 
 To re-install after a config change: `just install-mac` again — the
 script unloads the old plist before loading the new one.
@@ -313,9 +313,9 @@ script unloads the old plist before loading the new one.
 ### 8.2 Linux — systemd user unit
 
 ```bash
-just install-linux ~/.config/daeyeon-bot/oauth_token
-systemctl --user status daeyeon-bot
-journalctl --user -u daeyeon-bot -f
+just install-linux ~/.config/hyejin-bot/oauth_token
+systemctl --user status hyejin-bot
+journalctl --user -u hyejin-bot -f
 ```
 
 The unit is `Type=notify` with `WatchdogSec=120` — our heartbeat task
@@ -342,16 +342,16 @@ If the unit only runs when you're logged in, you forgot
 # Liveness (any host)
 just doctor                      # all ✓?
 just status                      # outbox depths + quarantined triggers
-ls -l ~/.daeyeon-bot/heartbeat   # mtime should be < 60s old
+ls -l ~/.hyejin-bot/heartbeat   # mtime should be < 60s old
 
 # Mac
-launchctl list | grep daeyeon-bot       # PID + last exit status
-tail -f ~/.daeyeon-bot/launchd.err.log
+launchctl list | grep hyejin-bot       # PID + last exit status
+tail -f ~/.hyejin-bot/launchd.err.log
 
 # Linux
-systemctl --user is-active daeyeon-bot
-journalctl --user -u daeyeon-bot -n 100 --no-pager
-journalctl --user -u daeyeon-bot -p err -n 50  # errors only
+systemctl --user is-active hyejin-bot
+journalctl --user -u hyejin-bot -n 100 --no-pager
+journalctl --user -u hyejin-bot -p err -n 50  # errors only
 ```
 
 Smoke test the PR-review path on a real PR you control:
@@ -360,7 +360,7 @@ Smoke test the PR-review path on a real PR you control:
 gh pr create -R you/test-repo --base main --title 'smoke' --body 'smoke'
 # Add the operator account as a reviewer (web UI or gh CLI).
 # The polling trigger picks it up within one poll_interval_seconds (default 300s).
-daeyeon-bot inspect pr-review --n 10   # newest first; expect status=posted
+hyejin-bot inspect pr-review --n 10   # newest first; expect status=posted
 ```
 
 If `status=posted` appears, you're done.
@@ -373,31 +373,31 @@ If `status=posted` appears, you're done.
 # Health
 just doctor
 just status
-sqlite3 ~/.daeyeon-bot/state.db \
+sqlite3 ~/.hyejin-bot/state.db \
   "SELECT status, COUNT(*) FROM outbox GROUP BY status;"
 
 # Inspection
-daeyeon-bot inspect events ls --n 20
-daeyeon-bot inspect events get <event_id>
-daeyeon-bot inspect tail --n 20
-daeyeon-bot inspect handlers ls
-daeyeon-bot inspect pr-review --n 20
-daeyeon-bot inspect pr-review --pr 'owner/repo#N'
-daeyeon-bot inspect ratelimit         # token-bucket state per bucket
+hyejin-bot inspect events ls --n 20
+hyejin-bot inspect events get <event_id>
+hyejin-bot inspect tail --n 20
+hyejin-bot inspect handlers ls
+hyejin-bot inspect pr-review --n 20
+hyejin-bot inspect pr-review --pr 'owner/repo#N'
+hyejin-bot inspect ratelimit         # token-bucket state per bucket
 
 # Operations
-daeyeon-bot lifecycle pause          # touches PAUSE — blocks Claude calls
-daeyeon-bot lifecycle resume         # removes PAUSE
+hyejin-bot lifecycle pause          # touches PAUSE — blocks Claude calls
+hyejin-bot lifecycle resume         # removes PAUSE
 just backup                           # hot snapshot under <state_dir>/backups/
 just prune                            # apply retention defaults
 
 # Replay a dead-lettered event
-sqlite3 ~/.daeyeon-bot/state.db \
+sqlite3 ~/.hyejin-bot/state.db \
   "SELECT event_id,handler,err FROM outbox WHERE status='dead_letter';"
-daeyeon-bot ops replay <event_id> --handler pr_review --confirm
+hyejin-bot ops replay <event_id> --handler pr_review --confirm
 
 # Manual PR review (re-request from operator, supersedes prior review)
-daeyeon-bot dev fire-pr-review --pr 'owner/repo#N' --force
+hyejin-bot dev fire-pr-review --pr 'owner/repo#N' --force
 ```
 
 ---
@@ -409,7 +409,7 @@ the operator-facing summary.
 
 | Section | Key | Default | Purpose |
 |---|---|---|---|
-| `[runtime]` | `state_dir` | `~/.daeyeon-bot` | All runtime files. |
+| `[runtime]` | `state_dir` | `~/.hyejin-bot` | All runtime files. |
 | `[runtime]` | `shutdown_budget_seconds` | `180` | Phase A+B+C total. |
 | `[logging]` | `level` | `INFO` | structlog level. |
 | `[logging]` | `format` | `json` | `json` for prod, `console` for dev. |
@@ -423,8 +423,8 @@ the operator-facing summary.
 | `[ratelimit]` | `claude_call_refill_per_sec` | `1.0` | Steady-state refill rate (tokens / second). |
 | `[ratelimit.defaults]` | `global_per_hour` / `global_per_day` / `handler_per_hour` | `30` / `200` / `10` | Legacy aggregate caps; retained for forward compat. The active gate is `[ratelimit]` above. |
 | `[secrets]` | `provider` | `keychain` | `keychain` \| `file` \| `env`. |
-| `[secrets]` | `keychain_service` / `_account` | `daeyeon-bot` / `oauth_token` | Keychain coords. |
-| `[secrets]` | `file_path` | `/etc/daeyeon-bot/oauth_token` | Linux 0600 file path. |
+| `[secrets]` | `keychain_service` / `_account` | `hyejin-bot` / `oauth_token` | Keychain coords. |
+| `[secrets]` | `file_path` | `/etc/hyejin-bot/oauth_token` | Linux 0600 file path. |
 | `[claude]` | `model` | `claude-opus-4-7` | Model the SDK uses. |
 | `[claude]` | `default_system_prompt` | `"You are…"` | Used if a handler doesn't override. |
 | `[github]` | `username` | _(empty)_ | Resolved at boot if blank. |
@@ -433,7 +433,7 @@ the operator-facing summary.
 | `[triggers.gh_review_requested]` | `enabled` | `true` | Polling trigger. |
 | `[triggers.gh_review_requested]` | `poll_interval_seconds` | `300` | How often to call `gh search`. |
 | `[handlers.pr_review]` | `enabled` | `true` | Master switch. |
-| `[handlers.pr_review]` | `persona_skill` | `daeyeon-bot-code-review` | Skill directory name. |
+| `[handlers.pr_review]` | `persona_skill` | `hyejin-bot-code-review` | Skill directory name. |
 | `[handlers.pr_review]` | `skills_root` | _(commented)_ | Override location. |
 | `[handlers.pr_review]` | `min_persona_chars` | `200` | Below this → persona invalid. |
 | `[handlers.pr_review]` | `concurrency` | `1` | Bump to `2` to overlap `gh` prep with Claude wait when batching PRs (doubles `gh` traffic). |
@@ -449,7 +449,7 @@ Env overrides use `DAEYEON_BOT__SECTION__KEY=…`. Example:
 ## 12. Upgrade
 
 ```bash
-cd ~/workspace/daeyeon-bot
+cd ~/workspace/hyejin-bot
 git fetch && git status                  # confirm clean
 git pull --ff-only                       # never force-pull
 just sync                                # uv refreshes deps if needed
@@ -460,9 +460,9 @@ just migrate                             # apply any new migrations
 just install-mac                         # reloads the plist
 
 # Linux
-just install-linux ~/.config/daeyeon-bot/oauth_token
-systemctl --user restart daeyeon-bot
-journalctl --user -u daeyeon-bot -f
+just install-linux ~/.config/hyejin-bot/oauth_token
+systemctl --user restart hyejin-bot
+journalctl --user -u hyejin-bot -f
 ```
 
 If `just check` fails on the new revision, **do not** restart the
@@ -476,20 +476,20 @@ deployment checkout you don't push from).
 ### 13.1 Mac
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/ai.rebellions.daeyeon-bot.plist
-rm ~/Library/LaunchAgents/ai.rebellions.daeyeon-bot.plist
-security delete-generic-password -s daeyeon-bot -a oauth_token
-rm -rf ~/.daeyeon-bot                     # only if you really want to drop state
+launchctl unload ~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist
+rm ~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist
+security delete-generic-password -s hyejin-bot -a oauth_token
+rm -rf ~/.hyejin-bot                     # only if you really want to drop state
 ```
 
 ### 13.2 Linux
 
 ```bash
-systemctl --user disable --now daeyeon-bot
-rm ~/.config/systemd/user/daeyeon-bot.service
+systemctl --user disable --now hyejin-bot
+rm ~/.config/systemd/user/hyejin-bot.service
 systemctl --user daemon-reload
-shred -u ~/.config/daeyeon-bot/oauth_token   # or rm if shred is unavailable
-rm -rf ~/.daeyeon-bot                         # only if you really want to drop state
+shred -u ~/.config/hyejin-bot/oauth_token   # or rm if shred is unavailable
+rm -rf ~/.hyejin-bot                         # only if you really want to drop state
 ```
 
 You may also want to revoke the OAuth token at `claude.com/settings`

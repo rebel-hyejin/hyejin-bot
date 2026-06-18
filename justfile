@@ -1,4 +1,4 @@
-# daeyeon-bot — task runner.
+# hyejin-bot — task runner.
 # `just <recipe>` to run. `just` (no args) prints the list.
 
 set shell := ["bash", "-cu"]
@@ -39,24 +39,24 @@ test-integration:
 # ─── Run / inspect ─────────────────────────────────────────────────────────────
 
 run:
-    uv run daeyeon-bot run
+    uv run hyejin-bot run
 
 doctor:
-    uv run daeyeon-bot ops doctor
+    uv run hyejin-bot ops doctor
 
 status:
-    uv run daeyeon-bot inspect status
+    uv run hyejin-bot inspect status
 
 # ─── Maintenance ───────────────────────────────────────────────────────────────
 
 prune:
-    uv run daeyeon-bot ops prune
+    uv run hyejin-bot ops prune
 
 backup:
-    uv run daeyeon-bot ops backup
+    uv run hyejin-bot ops backup
 
 migrate:
-    uv run daeyeon-bot ops migrate
+    uv run hyejin-bot ops migrate
 
 # ─── Deployment ────────────────────────────────────────────────────────────────
 

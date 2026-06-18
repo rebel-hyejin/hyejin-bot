@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pytest
 
-from daeyeon_bot.infra.host_resolver import HostResolver
+from hyejin_bot.infra.host_resolver import HostResolver
 
 
 def _patch_gethostbyname(monkeypatch: pytest.MonkeyPatch, fn: Callable[[str], str]) -> list[str]:

@@ -193,7 +193,7 @@ Any of these would require a spec amendment and a new contract entry.
 
 Spec FR-021 acknowledges the shared `automation` password is a weakness.
 The follow-up plan (tracked in RUNBOOK after this feature ships):
-1. Generate an SSH key pair for the bot (`~/.daeyeon-bot/ssh/id_ed25519`).
+1. Generate an SSH key pair for the bot (`~/.hyejin-bot/ssh/id_ed25519`).
 2. Distribute the public key to all SSW test hosts under
    `automation`'s `~/.ssh/authorized_keys`.
 3. Flip `[handlers.jira_triage]` to prefer key auth; password becomes

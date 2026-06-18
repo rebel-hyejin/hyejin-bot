@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from daeyeon_bot.cli.main import app
+from hyejin_bot.cli.main import app
 
 
 def test_root_help() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "daeyeon-bot" in result.stdout.lower() or "daemon" in result.stdout.lower()
+    assert "hyejin-bot" in result.stdout.lower() or "daemon" in result.stdout.lower()
 
 
 def test_subcommand_groups_present() -> None:
@@ -24,7 +24,7 @@ def test_subcommand_groups_present() -> None:
 
 
 def test_version_flag() -> None:
-    from daeyeon_bot import __version__
+    from hyejin_bot import __version__
 
     runner = CliRunner()
     result = runner.invoke(app, ["--version"])

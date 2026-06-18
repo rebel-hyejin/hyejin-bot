@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from daeyeon_bot.app.config import Config, HandlerEntry, PrReviewHandlerEntry
-from daeyeon_bot.app.registry import PrReviewDeps, build_handler_registry
-from daeyeon_bot.core.errors import ConfigError
-from daeyeon_bot.handlers.pr_review import PrReviewHandler
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.app.config import Config, HandlerEntry, PrReviewHandlerEntry
+from hyejin_bot.app.registry import PrReviewDeps, build_handler_registry
+from hyejin_bot.core.errors import ConfigError
+from hyejin_bot.handlers.pr_review import PrReviewHandler
+from hyejin_bot.infra.pr_review_persona import PersonaLoader
 
 
 def test_echo_registered_with_default_manifest() -> None:
@@ -75,7 +75,7 @@ def test_pr_review_registered_when_deps_provided(tmp_path: object) -> None:
         gh=object(),
         persona_loader=PersonaLoader(),
         db=object(),
-        github_username="daeyeon-lee",
+        github_username="hyejin-lee",
     )
     registry = build_handler_registry(_pr_review_cfg(), pr_review_deps=deps)
     record = registry.by_name["pr_review"]
@@ -87,7 +87,7 @@ def test_pr_review_registered_when_deps_provided(tmp_path: object) -> None:
 
 def test_pr_review_directly_instantiated_without_deps_raises() -> None:
     """Mismatched call: enabled=True but no deps must surface a clear error."""
-    from daeyeon_bot.app.registry import instantiate_handler
+    from hyejin_bot.app.registry import instantiate_handler
 
     with pytest.raises(ConfigError, match="PrReviewDeps"):
         instantiate_handler("pr_review", PrReviewHandlerEntry())

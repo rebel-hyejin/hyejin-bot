@@ -21,15 +21,15 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.config import load
-from daeyeon_bot.app.container import ContainerOverrides
-from daeyeon_bot.app.lifecycle import BootOptions, boot
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.infra import outbox, storage
-from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
-from daeyeon_bot.infra.jira_client import FieldDiscovery, JiraIdentity
-from daeyeon_bot.infra.persona_loader import PersonaLoader
-from daeyeon_bot.infra.ssw_bundle import SswBundleClient
+from hyejin_bot.app.config import load
+from hyejin_bot.app.container import ContainerOverrides
+from hyejin_bot.app.lifecycle import BootOptions, boot
+from hyejin_bot.core.events import make_event
+from hyejin_bot.infra import outbox, storage
+from hyejin_bot.infra.claude import FakeClaudeSession, FakeFactory
+from hyejin_bot.infra.jira_client import FieldDiscovery, JiraIdentity
+from hyejin_bot.infra.persona_loader import PersonaLoader
+from hyejin_bot.infra.ssw_bundle import SswBundleClient
 from tests.fakes.jira_client import FakeJiraClient
 from tests.fakes.loki import FakeLokiClient
 from tests.fakes.ssh_logs import FakeSshLogClient
@@ -55,11 +55,11 @@ _PERSONA_V2_BODY = (
 
 
 def _materialize_persona(root: Path, body: str) -> Path:
-    skill_dir = root / "daeyeon-bot-jira-triage"
+    skill_dir = root / "hyejin-bot-jira-triage"
     skill_dir.mkdir(parents=True, exist_ok=True)
     path = skill_dir / "SKILL.md"
     path.write_text(
-        f"---\nname: daeyeon-bot-jira-triage\ndescription: test persona.\n---\n\n{body}",
+        f"---\nname: hyejin-bot-jira-triage\ndescription: test persona.\n---\n\n{body}",
         encoding="utf-8",
     )
     return path
@@ -144,7 +144,7 @@ enabled = false
 [handlers.jira_triage]
 enabled = true
 allowed_projects = ["SSWCI"]
-persona_skill = "daeyeon-bot-jira-triage"
+persona_skill = "hyejin-bot-jira-triage"
 min_persona_chars = 100
 timeout_seconds = 60
 ssw_bundle_path = {str(tmp_path / "var" / "ssw-bundle")!r}
@@ -219,8 +219,8 @@ allow_external_ssw_bundle = true
         persona_loader=persona_loader,
         jira_identity=JiraIdentity(
             account_id="557058:fake",
-            email_address="daeyeon.lee@rebellions.ai",
-            display_name="daeyeon",
+            email_address="hyejin.han@rebellions.ai",
+            display_name="hyejin",
         ),
         field_discovery=FieldDiscovery(
             branch_field_id="customfield_10042",
@@ -277,7 +277,7 @@ allow_external_ssw_bundle = true
         # Bump the persona file. Use ns-precision `os.utime(..., ns=...)` so
         # we don't lose mtime resolution to float64 round-trip.
         persona_path.write_text(
-            f"---\nname: daeyeon-bot-jira-triage\ndescription: edited.\n---\n\n{_PERSONA_V2_BODY}",
+            f"---\nname: hyejin-bot-jira-triage\ndescription: edited.\n---\n\n{_PERSONA_V2_BODY}",
             encoding="utf-8",
         )
         bumped = v1_mtime_ns + 5_000_000_000  # +5s in ns

@@ -22,10 +22,10 @@ import aiosqlite
 import pytest
 from typer.testing import CliRunner
 
-from daeyeon_bot.cli.inspect import app as inspect_app
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.core.results import Ack
-from daeyeon_bot.infra import outbox, pr_review_audit, storage
+from hyejin_bot.cli.inspect import app as inspect_app
+from hyejin_bot.core.events import make_event
+from hyejin_bot.core.results import Ack
+from hyejin_bot.infra import outbox, pr_review_audit, storage
 
 
 def _write_config(tmp_path: Path) -> Path:

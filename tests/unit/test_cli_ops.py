@@ -16,10 +16,10 @@ import aiosqlite
 import pytest
 from typer.testing import CliRunner
 
-from daeyeon_bot.cli.ops import app as ops_app
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.core.results import DeadLetter
-from daeyeon_bot.infra import outbox, storage
+from hyejin_bot.cli.ops import app as ops_app
+from hyejin_bot.core.events import make_event
+from hyejin_bot.core.results import DeadLetter
+from hyejin_bot.infra import outbox, storage
 
 
 def _write_config(tmp_path: Path) -> Path:

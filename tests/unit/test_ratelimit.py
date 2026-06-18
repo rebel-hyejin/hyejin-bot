@@ -15,8 +15,8 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.app import ratelimit
-from daeyeon_bot.infra import storage
+from hyejin_bot.app import ratelimit
+from hyejin_bot.infra import storage
 
 
 async def _open(tmp_path: Path) -> aiosqlite.Connection:

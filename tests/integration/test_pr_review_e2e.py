@@ -25,13 +25,13 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.config import load
-from daeyeon_bot.app.container import ContainerOverrides
-from daeyeon_bot.app.lifecycle import BootOptions, boot
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.infra import outbox, storage
-from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.app.config import load
+from hyejin_bot.app.container import ContainerOverrides
+from hyejin_bot.app.lifecycle import BootOptions, boot
+from hyejin_bot.core.events import make_event
+from hyejin_bot.infra import outbox, storage
+from hyejin_bot.infra.claude import FakeClaudeSession, FakeFactory
+from hyejin_bot.infra.pr_review_persona import PersonaLoader
 from tests.fakes.gh_cli import FakeGh
 from tests.fakes.pr_persona import materialize_persona
 
@@ -96,7 +96,7 @@ level = "WARNING"
 format = "console"
 
 [github]
-username = "daeyeon-lee"
+username = "hyejin-lee"
 
 [handlers.echo]
 enabled = false
@@ -124,13 +124,13 @@ async def test_manual_pr_review_flows_end_to_end(
     repo = "octo/cat"
     pr_number = 42
 
-    fake_gh = FakeGh(user_login="daeyeon-lee")
+    fake_gh = FakeGh(user_login="hyejin-lee")
     fake_gh.add_pr(
         repo,
         pr_number,
         head_sha=head_sha,
         author="alice",
-        requested=("daeyeon-lee",),
+        requested=("hyejin-lee",),
         files=[{"filename": "lib/foo.py", "patch": _PATCH_HUNK, "changes": 4}],
     )
 
@@ -143,7 +143,7 @@ async def test_manual_pr_review_flows_end_to_end(
         claude_session_factory=factory,
         gh=fake_gh,
         persona_loader=persona_loader,
-        github_username="daeyeon-lee",
+        github_username="hyejin-lee",
     )
     stop = asyncio.Event()
     boot_task = asyncio.create_task(
@@ -237,13 +237,13 @@ async def test_self_authored_short_circuits(
     repo = "octo/cat"
     pr_number = 99
 
-    fake_gh = FakeGh(user_login="daeyeon-lee")
+    fake_gh = FakeGh(user_login="hyejin-lee")
     fake_gh.add_pr(
         repo,
         pr_number,
         head_sha=head_sha,
-        author="daeyeon-lee",  # operator IS the author
-        requested=("daeyeon-lee",),
+        author="hyejin-lee",  # operator IS the author
+        requested=("hyejin-lee",),
         files=[{"filename": "lib/foo.py", "patch": _PATCH_HUNK, "changes": 4}],
     )
     fake_session = FakeClaudeSession(default=_claude_response(head_sha))
@@ -254,7 +254,7 @@ async def test_self_authored_short_circuits(
         claude_session_factory=factory,
         gh=fake_gh,
         persona_loader=persona_loader,
-        github_username="daeyeon-lee",
+        github_username="hyejin-lee",
     )
     stop = asyncio.Event()
     boot_task = asyncio.create_task(
@@ -359,13 +359,13 @@ async def test_persona_flip_takes_effect_without_restart(
     pr_a = 101
     pr_b = 202
 
-    fake_gh = FakeGh(user_login="daeyeon-lee")
+    fake_gh = FakeGh(user_login="hyejin-lee")
     fake_gh.add_pr(
         repo,
         pr_a,
         head_sha=head_sha_a,
         author="alice",
-        requested=("daeyeon-lee",),
+        requested=("hyejin-lee",),
         files=[{"filename": "lib/foo.py", "patch": _PATCH_HUNK, "changes": 4}],
     )
     fake_gh.add_pr(
@@ -373,7 +373,7 @@ async def test_persona_flip_takes_effect_without_restart(
         pr_b,
         head_sha=head_sha_b,
         author="bob",
-        requested=("daeyeon-lee",),
+        requested=("hyejin-lee",),
         files=[{"filename": "lib/bar.py", "patch": _PATCH_HUNK, "changes": 4}],
     )
 
@@ -387,7 +387,7 @@ async def test_persona_flip_takes_effect_without_restart(
         claude_session_factory=factory,
         gh=fake_gh,
         persona_loader=persona_loader,
-        github_username="daeyeon-lee",
+        github_username="hyejin-lee",
     )
     stop = asyncio.Event()
     boot_task = asyncio.create_task(

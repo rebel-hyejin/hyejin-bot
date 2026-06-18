@@ -14,7 +14,7 @@ Linear, additive, never edited in place (per `CLAUDE.md` §Add a SQL column).
 Bumps `meta.schema_version` to `2`.
 
 ```sql
--- daeyeon-bot — schema_version=2.
+-- hyejin-bot — schema_version=2.
 -- Adds the GitHub PR-review-bot's per-PR polling state and per-review audit log.
 PRAGMA foreign_keys = ON;
 
@@ -115,7 +115,7 @@ race-safe enqueue path. Polling-trigger duplicate observations of the same
 
 ---
 
-## 3. In-memory domain types (`src/daeyeon_bot/core/pr_review/`)
+## 3. In-memory domain types (`src/hyejin_bot/core/pr_review/`)
 
 Pure dataclasses, stdlib only. No I/O, no SDK references.
 

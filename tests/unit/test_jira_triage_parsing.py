@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from daeyeon_bot.handlers.jira_triage_parsing import (
+from hyejin_bot.handlers.jira_triage_parsing import (
     extract_error_log,
     parse_ssh_url,
     parse_timestamps,

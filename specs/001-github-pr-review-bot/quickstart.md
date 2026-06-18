@@ -1,6 +1,6 @@
 # Quickstart — GitHub PR Review Automation Bot
 
-For an operator who already has the daeyeon-bot daemon running (Phases 0–6
+For an operator who already has the hyejin-bot daemon running (Phases 0–6
 complete) and wants to enable PR-review auto-review.
 
 ---
@@ -35,7 +35,7 @@ this):
 ```markdown
 ---
 name: pr-review
-description: Default PR review persona for daeyeon-bot.
+description: Default PR review persona for hyejin-bot.
 ---
 
 You are reviewing GitHub pull requests on Daeyeon's behalf. Be direct,
@@ -53,7 +53,7 @@ contract and a richer example.
 
 ## 2. Wire it into config
 
-Edit `~/.daeyeon-bot/config.toml` (or wherever `DAEYEON_BOT_CONFIG` points):
+Edit `~/.hyejin-bot/config.toml` (or wherever `DAEYEON_BOT_CONFIG` points):
 
 ```toml
 [github]
@@ -91,8 +91,8 @@ tables) and reload config:
 just migrate                       # idempotent; brings schema_version to 2
 just doctor                        # should now show schema_version=2
 # Restart the daemon to pick up the new config + trigger:
-launchctl kickstart -k gui/$UID/com.daeyeon.bot   # macOS
-# or:  systemctl --user restart daeyeon-bot       # Linux
+launchctl kickstart -k gui/$UID/com.hyejin.bot   # macOS
+# or:  systemctl --user restart hyejin-bot       # Linux
 ```
 
 ---
@@ -104,10 +104,10 @@ to. Then:
 
 ```bash
 # Dry run — does NOT post:
-uv run daeyeon-bot dev fire pr-review --pr "owner/repo#42" --dry-run
+uv run hyejin-bot dev fire pr-review --pr "owner/repo#42" --dry-run
 
 # Real post:
-uv run daeyeon-bot dev fire pr-review --pr "owner/repo#42"
+uv run hyejin-bot dev fire pr-review --pr "owner/repo#42"
 ```
 
 Within ~30 seconds you should see the review on the PR — Summary in the
@@ -116,7 +116,7 @@ review body, inline comments anchored to specific lines.
 Inspect what the bot did:
 
 ```bash
-uv run daeyeon-bot inspect pr-review --pr "owner/repo#42"
+uv run hyejin-bot inspect pr-review --pr "owner/repo#42"
 ```
 
 (Outputs the `pr_review_audit` row: status, review_id, submitted_at,
@@ -131,7 +131,7 @@ account):
 
 ```bash
 # Watch the structured log:
-tail -f ~/.daeyeon-bot/launchd.out.log | jq 'select(.event == "gh_review_requested.poll" or .event == "pr_review.posted")'
+tail -f ~/.hyejin-bot/launchd.out.log | jq 'select(.event == "gh_review_requested.poll" or .event == "pr_review.posted")'
 ```
 
 Within ~5 minutes (one polling cycle) the trigger emits the event and the
@@ -144,7 +144,7 @@ handler posts the review.
 When you want a fresh pass without a new push:
 
 ```bash
-uv run daeyeon-bot dev fire pr-review --pr "owner/repo#42" --force
+uv run hyejin-bot dev fire pr-review --pr "owner/repo#42" --force
 ```
 
 The new review's Summary first line will read:
@@ -164,8 +164,8 @@ The existing daemon kill-switch applies — when paused, no review comments
 post to GitHub:
 
 ```bash
-uv run daeyeon-bot lifecycle pause   --reason "ooo for the day"
-uv run daeyeon-bot lifecycle resume
+uv run hyejin-bot lifecycle pause   --reason "ooo for the day"
+uv run hyejin-bot lifecycle resume
 ```
 
 Pending review-requested events stay queued during the pause; they all
@@ -177,8 +177,8 @@ process after resume (no duplicates, no losses — see SC-007).
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `daeyeon-bot run` exits 78 right after enabling pr_review | `gh auth status` is broken or `gh` not on PATH | `gh auth login` (or `gh auth refresh`) and restart the daemon |
-| Review never posts on a small PR | persona file missing or too short → `DeadLetter` | `daeyeon-bot inspect dlq` — look for `persona unavailable`; fix SKILL.md; `daeyeon-bot ops replay <event_id> --confirm` |
+| `hyejin-bot run` exits 78 right after enabling pr_review | `gh auth status` is broken or `gh` not on PATH | `gh auth login` (or `gh auth refresh`) and restart the daemon |
+| Review never posts on a small PR | persona file missing or too short → `DeadLetter` | `hyejin-bot inspect dlq` — look for `persona unavailable`; fix SKILL.md; `hyejin-bot ops replay <event_id> --confirm` |
 | "PR too large for automated review" Summary on a PR you wanted reviewed | `>1000` lines or `>50` files | Either split the PR, or raise `[handlers.pr_review.size_budget]` thresholds in config and reload |
 | Auto-trigger fires but review fails 422 from GitHub | inline anchor logic bug (should be impossible — anchor filter runs before posting) | Capture the failing event id and file an issue; meanwhile `--force` retries the manual path |
 | Persona edits not reflected in next review | mtime didn't bump (e.g., editor wrote in place without changing mtime, or filesystem with second-resolution mtime) | `touch ~/.claude/skills/<name>/SKILL.md` to bump mtime, then trigger again |

@@ -1,6 +1,6 @@
 """In-memory `gh` substitute for tests.
 
-Mirrors the public method signatures of `daeyeon_bot.infra.gh_cli.GhCli` so
+Mirrors the public method signatures of `hyejin_bot.infra.gh_cli.GhCli` so
 tests can swap `FakeGh` for the real wrapper.
 """
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from daeyeon_bot.core.errors import (
+from hyejin_bot.core.errors import (
     AuthError,
     PermanentError,
     RateLimitError,
@@ -38,7 +38,7 @@ class _FakePr:
 class FakeGh:
     """Fake GhCli backed by an in-memory dict of canned responses."""
 
-    user_login: str = "daeyeon-lee"
+    user_login: str = "hyejin-lee"
     auth_ok: bool = True
     rate_limited: bool = False
     auth_user_raises: Exception | None = None

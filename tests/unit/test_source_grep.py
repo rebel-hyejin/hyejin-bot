@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.infra.source_grep import extract_tokens, grep_excerpts
+from hyejin_bot.infra.source_grep import extract_tokens, grep_excerpts
 
 # ── extract_tokens ──────────────────────────────────────────────────────────
 

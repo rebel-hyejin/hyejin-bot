@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from daeyeon_bot.infra.ssh_logs import SshArtifact, SshFetchResult, SshSkip
+from hyejin_bot.infra.ssh_logs import SshArtifact, SshFetchResult, SshSkip
 
 
 @dataclass(slots=True)

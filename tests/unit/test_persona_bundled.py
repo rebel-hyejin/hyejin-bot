@@ -1,4 +1,4 @@
-"""CI lint for the repo-bundled `daeyeon-bot-jira-triage` persona (T051).
+"""CI lint for the repo-bundled `hyejin-bot-jira-triage` persona (T051).
 
 Guards against drift — the bundled SKILL.md must remain a valid persona:
 loadable by `PersonaLoader`, body >= min_persona_chars, and contain the
@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from daeyeon_bot.infra.persona_loader import PersonaLoader
+from hyejin_bot.infra.persona_loader import PersonaLoader
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _BUNDLED_ROOT = _PROJECT_ROOT / ".claude" / "skills"
-_SKILL_NAME = "daeyeon-bot-jira-triage"
+_SKILL_NAME = "hyejin-bot-jira-triage"
 
 
 def test_bundled_skill_file_exists() -> None:

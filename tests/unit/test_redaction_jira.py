@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from daeyeon_bot.infra.logging import (
+from hyejin_bot.infra.logging import (
     REDACTED,
     clear_literal_secrets_for_testing,
     redact_text,

@@ -1,6 +1,6 @@
 # Quickstart — Jira Regression-Failure Triage Bot
 
-For an operator who already has the daeyeon-bot daemon running (Phases 0–7
+For an operator who already has the hyejin-bot daemon running (Phases 0–7
 complete, GitHub PR-review bot from feature 001 already shipped) and wants
 to enable the Jira triage bot.
 
@@ -35,16 +35,16 @@ the triage handler — the daemon will fail-fast on boot otherwise.
 ## 1. Author your triage persona (optional — a default ships)
 
 The repo bundles a working default at
-`<project_root>/.claude/skills/daeyeon-bot-jira-triage/SKILL.md`. The bot
+`<project_root>/.claude/skills/hyejin-bot-jira-triage/SKILL.md`. The bot
 uses this if you don't override.
 
 To customize:
 
 ```bash
-mkdir -p ~/.claude/skills/daeyeon-bot-jira-triage
-cp <project_root>/.claude/skills/daeyeon-bot-jira-triage/SKILL.md \
-   ~/.claude/skills/daeyeon-bot-jira-triage/SKILL.md
-$EDITOR ~/.claude/skills/daeyeon-bot-jira-triage/SKILL.md
+mkdir -p ~/.claude/skills/hyejin-bot-jira-triage
+cp <project_root>/.claude/skills/hyejin-bot-jira-triage/SKILL.md \
+   ~/.claude/skills/hyejin-bot-jira-triage/SKILL.md
+$EDITOR ~/.claude/skills/hyejin-bot-jira-triage/SKILL.md
 ```
 
 Minimum content (≥ 200 chars after frontmatter strip — the bot enforces
@@ -52,12 +52,12 @@ this):
 
 ```markdown
 ---
-name: daeyeon-bot-jira-triage
-description: daeyeon의 NPU regression-failure 트리아지 페르소나.
+name: hyejin-bot-jira-triage
+description: hyejin의 NPU regression-failure 트리아지 페르소나.
 ---
 
 # Role
-당신은 daeyeon-bot이 새 regression-failure 티켓에 다는 first-pass 트리아지
+당신은 hyejin-bot이 새 regression-failure 티켓에 다는 first-pass 트리아지
 코멘트의 페르소나. fix-it bot이 아니다.
 
 # Operating principles
@@ -75,16 +75,16 @@ contract and a richer example.
 ```bash
 # Jira email (used as basic-auth username; matches the convention in
 # ssw-bundle/inv/test_report/jira_client.py):
-uv run daeyeon-bot lifecycle setup-secret jira_user
+uv run hyejin-bot lifecycle setup-secret jira_user
 # (prompts for your Atlassian email; writes to macOS Keychain or 0600 file
 #  depending on `[secrets].provider`)
 
 # Jira API token:
-uv run daeyeon-bot lifecycle setup-secret jira_api_token
+uv run hyejin-bot lifecycle setup-secret jira_api_token
 # (prompts for the token from id.atlassian.com)
 
 # Shared SSH password for test hosts:
-uv run daeyeon-bot lifecycle setup-secret ssw_automation_password
+uv run hyejin-bot lifecycle setup-secret ssw_automation_password
 # (prompts; for now it's literally "automation" — long-term plan is key auth)
 ```
 
@@ -98,7 +98,7 @@ just doctor       # checks secrets provider for JIRA_USER, JIRA_API_TOKEN,
 
 ## 3. Wire it into config
 
-Edit `~/.daeyeon-bot/config.toml` (or wherever `DAEYEON_BOT_CONFIG` points):
+Edit `~/.hyejin-bot/config.toml` (or wherever `DAEYEON_BOT_CONFIG` points):
 
 ```toml
 [jira]
@@ -125,7 +125,7 @@ dedup_ttl_seconds = 86400
 concurrency = 1
 accepts = ["jira.assigned", "jira.triage.manual"]
 allowed_projects = ["SSWCI"]             # start narrow; expand later
-persona_skill = "daeyeon-bot-jira-triage"
+persona_skill = "hyejin-bot-jira-triage"
 min_persona_chars = 200
 timeout_seconds = 600
 ssw_bundle_path = "var/ssw-bundle"
@@ -148,8 +148,8 @@ just migrate                       # idempotent; brings schema_version to 5
 just doctor                        # should now show schema_version=5
 
 # Restart the daemon to pick up the new config + trigger:
-launchctl kickstart -k gui/$UID/com.daeyeon.bot   # macOS
-# or:  systemctl --user restart daeyeon-bot       # Linux
+launchctl kickstart -k gui/$UID/com.hyejin.bot   # macOS
+# or:  systemctl --user restart hyejin-bot       # Linux
 ```
 
 ---
@@ -157,13 +157,13 @@ launchctl kickstart -k gui/$UID/com.daeyeon.bot   # macOS
 ## 4. First boot — what to expect
 
 On the next daemon boot with these settings, you'll see (in
-`~/.daeyeon-bot/launchd.out.log` or `journalctl --user -u daeyeon-bot`):
+`~/.hyejin-bot/launchd.out.log` or `journalctl --user -u hyejin-bot`):
 
 ```jsonc
-{"event": "jira.boot.probe_myself", "account_id": "557058:...", "email": "daeyeon.lee@..."}
+{"event": "jira.boot.probe_myself", "account_id": "557058:...", "email": "hyejin.han@..."}
 {"event": "jira.boot.discover_fields", "project": "SSWCI", "branch_field": "customfield_10042", "commit_field": "customfield_10043", "issuetype": "Bug"}
-{"event": "ssw_bundle.boot.path_ok", "path": "/.../daeyeon-bot/var/ssw-bundle"}
-{"event": "ssh_logs.boot.known_hosts_ok", "path": "/.../daeyeon-bot/jira_triage_known_hosts"}
+{"event": "ssw_bundle.boot.path_ok", "path": "/.../hyejin-bot/var/ssw-bundle"}
+{"event": "ssh_logs.boot.known_hosts_ok", "path": "/.../hyejin-bot/jira_triage_known_hosts"}
 {"event": "trigger.start", "name": "jira_assigned", "poll_interval_seconds": 300}
 ```
 
@@ -184,10 +184,10 @@ Pick a recent SSWCI regression-failure ticket you have access to. Then:
 ```bash
 # Dry run — fetches everything, runs Claude, prints the would-be comment
 # but does NOT post:
-uv run daeyeon-bot dev fire jira-triage --issue SSWCI-16787 --dry-run
+uv run hyejin-bot dev fire jira-triage --issue SSWCI-16787 --dry-run
 
 # Real post:
-uv run daeyeon-bot dev fire jira-triage --issue SSWCI-16787
+uv run hyejin-bot dev fire jira-triage --issue SSWCI-16787
 ```
 
 Within ~5–10 minutes (depending on ssw-bundle checkout cold-cache, Loki
@@ -213,7 +213,7 @@ h3. Next data to collect
 Inspect what the bot did:
 
 ```bash
-uv run daeyeon-bot inspect jira-triage --issue SSWCI-16787
+uv run hyejin-bot inspect jira-triage --issue SSWCI-16787
 ```
 
 Outputs the `jira_triage_audit` row: status, comment_id, posted_at,
@@ -229,7 +229,7 @@ to the DevOps team), or carefully assign one yourself:
 
 ```bash
 # Watch the structured log for trigger + handler events:
-tail -f ~/.daeyeon-bot/launchd.out.log | \
+tail -f ~/.hyejin-bot/launchd.out.log | \
   jq 'select(.event | startswith("jira_assigned.") or startswith("jira_triage."))'
 ```
 
@@ -249,7 +249,7 @@ command from §5 with `--force`.
 When you want a fresh pass without filing a new ticket:
 
 ```bash
-uv run daeyeon-bot dev fire jira-triage --issue SSWCI-16787 --force
+uv run hyejin-bot dev fire jira-triage --issue SSWCI-16787 --force
 ```
 
 The new comment is prepended with a `{quote}…{quote}` callout:
@@ -272,8 +272,8 @@ The existing daemon kill-switch applies — when paused, no Jira
 comments post:
 
 ```bash
-uv run daeyeon-bot lifecycle pause   --reason "ooo for the day"
-uv run daeyeon-bot lifecycle resume
+uv run hyejin-bot lifecycle pause   --reason "ooo for the day"
+uv run hyejin-bot lifecycle resume
 ```
 
 Pending triage events stay queued during the pause; they all process
@@ -285,8 +285,8 @@ after resume (no duplicates, no losses — see SC-007).
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `daeyeon-bot run` exits 78 right after enabling jira_triage | Secrets unreadable (Keychain locked, 0600 file missing, env path) | `daeyeon-bot ops doctor`; re-run `setup-token` for the failing key |
-| `daeyeon-bot run` exits 78 with `JIRA_USER does not match emailAddress` | `JIRA_USER` value is the wrong email | Re-run `setup-token jira-user` with the correct email |
+| `hyejin-bot run` exits 78 right after enabling jira_triage | Secrets unreadable (Keychain locked, 0600 file missing, env path) | `hyejin-bot ops doctor`; re-run `setup-token` for the failing key |
+| `hyejin-bot run` exits 78 with `JIRA_USER does not match emailAddress` | `JIRA_USER` value is the wrong email | Re-run `setup-token jira-user` with the correct email |
 | Auto-trigger fires but the audit shows `skipped_not_regression_failure` | Ticket title doesn't match the `regression-test . <host> . <tc>` regex | Expected — the bot only triages regression-failure shaped tickets. If the title is misformatted, fix the ticket title or skip. |
 | Audit shows `skipped_missing_metadata` with `missing_fields=["branch","commit"]` | Parent Epic has empty Branch / Commit custom fields | Backfill the Epic fields and retry: `dev fire jira-triage --issue X --force` |
 | Audit shows `skipped_unresolvable_commit` | The Epic's commit SHA isn't on `origin` (force-pushed, lost) | Verify the SHA exists: `cd var/ssw-bundle && git fetch origin && git cat-file -e <sha>`. If genuinely lost, fix the Epic or skip. |
@@ -294,9 +294,9 @@ after resume (no duplicates, no losses — see SC-007).
 | Comment posts but Evidence section says `[loki <stream>: unavailable]` | Loki was unreachable or slow during triage | One-off transient — next triage should be clean. Persistent → check `[loki].base_url` and network. |
 | Comment posts but Evidence section says `[ssh: auth_failed]` | `SSW_AUTOMATION_PASSWORD` is stale | Re-run `setup-token ssw-automation-password` |
 | Triage takes ~10 min on first event after a long idle period | Cold `var/ssw-bundle/` cache — `git fetch` pulls a lot | Normal. Subsequent triages on the same branch reuse the local objects and take seconds. |
-| Persona edits not reflected in next triage | mtime didn't bump (editor wrote in place, second-resolution mtime) | `touch ~/.claude/skills/daeyeon-bot-jira-triage/SKILL.md` to bump mtime, then trigger again |
+| Persona edits not reflected in next triage | mtime didn't bump (editor wrote in place, second-resolution mtime) | `touch ~/.claude/skills/hyejin-bot-jira-triage/SKILL.md` to bump mtime, then trigger again |
 | Comment doesn't render bullets — shows raw markdown | wiki-markup builder bug or the persona returned literal `*` instead of bullet markup | Inspect the audit row's `summary_md` to see what Claude returned; fix the persona to be clearer about output format, retry |
-| `daeyeon-bot` runs but Loki section in evidence is consistently empty | DNS or label mismatch | `socket.gethostbyname("ssw-giga-02")` works? If not, fix DNS. Loki labels diverge from `regression-fwlog`/`regression-smclog`? Update `[loki].kernel_query_template` and friends. |
+| `hyejin-bot` runs but Loki section in evidence is consistently empty | DNS or label mismatch | `socket.gethostbyname("ssw-giga-02")` works? If not, fix DNS. Loki labels diverge from `regression-fwlog`/`regression-smclog`? Update `[loki].kernel_query_template` and friends. |
 
 ---
 

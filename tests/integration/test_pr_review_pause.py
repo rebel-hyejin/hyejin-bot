@@ -26,14 +26,14 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app import pause as pause_mod
-from daeyeon_bot.app.config import load
-from daeyeon_bot.app.container import ContainerOverrides
-from daeyeon_bot.app.lifecycle import BootOptions, boot
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.infra import outbox, storage
-from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.app import pause as pause_mod
+from hyejin_bot.app.config import load
+from hyejin_bot.app.container import ContainerOverrides
+from hyejin_bot.app.lifecycle import BootOptions, boot
+from hyejin_bot.core.events import make_event
+from hyejin_bot.infra import outbox, storage
+from hyejin_bot.infra.claude import FakeClaudeSession, FakeFactory
+from hyejin_bot.infra.pr_review_persona import PersonaLoader
 from tests.fakes.gh_cli import FakeGh
 from tests.fakes.pr_persona import materialize_persona
 
@@ -97,7 +97,7 @@ level = "WARNING"
 format = "console"
 
 [github]
-username = "daeyeon-lee"
+username = "hyejin-lee"
 
 [handlers.echo]
 enabled = false
@@ -124,13 +124,13 @@ async def test_pause_blocks_review_then_resume_drains(
     repo = "octo/cat"
     pr_number = 7
 
-    fake_gh = FakeGh(user_login="daeyeon-lee")
+    fake_gh = FakeGh(user_login="hyejin-lee")
     fake_gh.add_pr(
         repo,
         pr_number,
         head_sha=head_sha,
         author="alice",
-        requested=("daeyeon-lee",),
+        requested=("hyejin-lee",),
         files=[{"filename": "lib/foo.py", "patch": _PATCH_HUNK, "changes": 4}],
     )
     fake_session = FakeClaudeSession(default=_claude_response(head_sha))
@@ -141,7 +141,7 @@ async def test_pause_blocks_review_then_resume_drains(
         claude_session_factory=factory,
         gh=fake_gh,
         persona_loader=persona_loader,
-        github_username="daeyeon-lee",
+        github_username="hyejin-lee",
     )
 
     cfg = load(str(config_file))

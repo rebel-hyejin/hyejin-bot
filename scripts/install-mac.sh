@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Register daeyeon-bot as a launchd user agent.
+# Register hyejin-bot as a launchd user agent.
 #
 # Usage:  ./scripts/install-mac.sh
 # Re-run safely; the script `unload`s any previous version before loading
@@ -8,8 +8,8 @@
 set -euo pipefail
 
 PREFIX="$(cd "$(dirname "$0")/.." && pwd)"
-STATE_DIR="${DAEYEON_BOT_STATE_DIR:-$HOME/.daeyeon-bot}"
-LABEL="ai.rebellions.daeyeon-bot"
+STATE_DIR="${DAEYEON_BOT_STATE_DIR:-$HOME/.hyejin-bot}"
+LABEL="ai.rebellions.hyejin-bot"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 TARGET="$LAUNCH_AGENTS_DIR/$LABEL.plist"
 TEMPLATE="$PREFIX/deploy/launchd/$LABEL.plist"

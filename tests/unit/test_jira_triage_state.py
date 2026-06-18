@@ -7,7 +7,7 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.infra.jira_triage_state import (
+from hyejin_bot.infra.jira_triage_state import (
     get_state,
     prune_dormant,
     seed_cold_start,
@@ -15,7 +15,7 @@ from daeyeon_bot.infra.jira_triage_state import (
     seed_marker_set,
     upsert_observation,
 )
-from daeyeon_bot.infra.storage import apply_migrations, open_db
+from hyejin_bot.infra.storage import apply_migrations, open_db
 
 
 async def _open(tmp_path: Path) -> aiosqlite.Connection:

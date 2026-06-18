@@ -20,9 +20,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from daeyeon_bot.cli import inspect as inspect_cli
-from daeyeon_bot.infra import storage
-from daeyeon_bot.infra.pr_review_audit import insert_audit
+from hyejin_bot.cli import inspect as inspect_cli
+from hyejin_bot.infra import storage
+from hyejin_bot.infra.pr_review_audit import insert_audit
 
 
 def _write_config(tmp_path: Path) -> Path:

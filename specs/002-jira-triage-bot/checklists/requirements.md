@@ -7,7 +7,7 @@
 ## Content Quality
 
 - [x] No implementation details (languages, frameworks, APIs) — implementation choices live in `plan.md` / `research.md` / `contracts/`.
-- [x] Focused on user value and business needs — every FR ties back to "daeyeon walks into a comment-with-evidence" instead of a blank ticket.
+- [x] Focused on user value and business needs — every FR ties back to "hyejin walks into a comment-with-evidence" instead of a blank ticket.
 - [x] Written for non-technical stakeholders — section structure and Korean clarification Q/A pairs work for the operator without coding-language assumptions.
 - [x] All mandatory sections completed (Clarifications, User Scenarios & Testing, Edge Cases, Requirements, Success Criteria, Assumptions).
 
@@ -53,7 +53,7 @@ here so the reviewer doesn't have to re-derive them from `plan.md` /
 - [ ] `handlers/jira_triage.py` registered in `app/registry.py:instantiate_handler`.
 - [ ] `[triggers.jira_new_issue]` and `[handlers.jira_triage]` blocks added to `config.example.toml` with `enabled = false` defaults.
 - [ ] Routing entries added: `"jira.new_issue" = ["jira_triage"]`, `"jira.triage.manual" = ["jira_triage"]`.
-- [ ] Bundled persona shipped at `.claude/skills/daeyeon-bot-jira-triage/SKILL.md`; CI lint asserts it parses and exceeds `min_persona_chars`.
+- [ ] Bundled persona shipped at `.claude/skills/hyejin-bot-jira-triage/SKILL.md`; CI lint asserts it parses and exceeds `min_persona_chars`.
 - [ ] Handler wraps `handle()` in `asyncio.wait_for(timeout=config.timeout_seconds)`.
 - [ ] Audit row written for every outcome path (the 7 CHECK enum values are all reachable from at least one test).
 - [ ] Strict redaction: any pattern match in `summary_md` or `evidence.quote` raises `PermanentError → DeadLetter` (no silent rewrite). Verified by unit tests on both `summary_md` and `evidence[*].quote`.

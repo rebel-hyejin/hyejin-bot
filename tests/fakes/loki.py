@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from daeyeon_bot.core.jira_triage.types import LokiSlice, LokiStream
-from daeyeon_bot.infra.loki import LokiQueryResult
+from hyejin_bot.core.jira_triage.types import LokiSlice, LokiStream
+from hyejin_bot.infra.loki import LokiQueryResult
 
 
 @dataclass(slots=True)

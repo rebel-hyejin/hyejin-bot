@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from daeyeon_bot.handlers.pr_review_lgtm import (
+from hyejin_bot.handlers.pr_review_lgtm import (
     _LGTM_GIFS,  # pyright: ignore[reportPrivateUsage]
     _seed_index,  # pyright: ignore[reportPrivateUsage]
     pick_lgtm_gif,

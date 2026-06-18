@@ -7,8 +7,8 @@ from pathlib import Path
 
 import aiosqlite
 
-from daeyeon_bot.app.backup import BACKUP_DIR_NAME, run_backup
-from daeyeon_bot.infra import storage
+from hyejin_bot.app.backup import BACKUP_DIR_NAME, run_backup
+from hyejin_bot.infra import storage
 
 
 async def _seed_db(db_path: Path) -> None:

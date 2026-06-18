@@ -12,30 +12,30 @@ from unittest.mock import patch
 
 import pytest
 
-from daeyeon_bot.core.errors import AuthError, ConfigError
-from daeyeon_bot.infra.secrets import EnvSecrets, FileSecrets, KeychainSecrets
+from hyejin_bot.core.errors import AuthError, ConfigError
+from hyejin_bot.infra.secrets import EnvSecrets, FileSecrets, KeychainSecrets
 
 # ─── KeychainSecrets.load_secret ──────────────────────────────────────────────
 
 
 def test_keychain_load_secret_returns_value() -> None:
     """`load_secret(key)` resolves `(service, account=key)`."""
-    provider = KeychainSecrets(service="daeyeon-bot", account="oauth_token")
+    provider = KeychainSecrets(service="hyejin-bot", account="oauth_token")
     with patch("keyring.get_password", return_value="atok-123") as gp:
         value = provider.load_secret("jira_api_token")
     assert value == "atok-123"
-    gp.assert_called_once_with("daeyeon-bot", "jira_api_token")
+    gp.assert_called_once_with("hyejin-bot", "jira_api_token")
 
 
 def test_keychain_load_secret_raises_when_missing() -> None:
-    provider = KeychainSecrets(service="daeyeon-bot", account="oauth_token")
+    provider = KeychainSecrets(service="hyejin-bot", account="oauth_token")
     with patch("keyring.get_password", return_value=None):
         with pytest.raises(AuthError, match="no secret"):
             provider.load_secret("missing_key")
 
 
 def test_keychain_load_secret_rejects_empty_key() -> None:
-    provider = KeychainSecrets(service="daeyeon-bot", account="oauth_token")
+    provider = KeychainSecrets(service="hyejin-bot", account="oauth_token")
     with pytest.raises(ConfigError, match="empty secret key"):
         provider.load_secret("")
 
@@ -111,7 +111,7 @@ def test_env_load_secret_rejects_empty_key() -> None:
 
 
 def test_keychain_oauth_token_path_unchanged() -> None:
-    provider = KeychainSecrets(service="daeyeon-bot", account="oauth_token")
+    provider = KeychainSecrets(service="hyejin-bot", account="oauth_token")
     with patch("keyring.get_password", return_value="tok-oauth"):
         assert provider.load_oauth_token() == "tok-oauth"
 

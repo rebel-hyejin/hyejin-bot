@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.core.errors import ConfigError, PermanentError
-from daeyeon_bot.infra.ssw_bundle import (
+from hyejin_bot.core.errors import ConfigError, PermanentError
+from hyejin_bot.infra.ssw_bundle import (
     SswBundleClient,
     UnresolvableCommitError,
 )
@@ -216,7 +216,7 @@ async def test_grep_test_case_returns_none_for_unknown(tmp_path: Path) -> None:
 
 def test_parse_failed_submodules_extracts_paths() -> None:
     # Private helper — accessed via module attribute for test only.
-    from daeyeon_bot.infra import ssw_bundle as _bundle
+    from hyejin_bot.infra import ssw_bundle as _bundle
 
     text = (
         "fatal: clone of 'git@x:y.git' into submodule path '/clone/products/atom/fw' failed\n"

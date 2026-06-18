@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from daeyeon_bot.core.jira_triage.types import (
+from hyejin_bot.core.jira_triage.types import (
     EpicMeta,
     EvidenceItem,
     LokiSlice,
@@ -17,7 +17,7 @@ from daeyeon_bot.core.jira_triage.types import (
     TitleParse,
     TriageDraft,
 )
-from daeyeon_bot.infra.jira_markup import (
+from hyejin_bot.infra.jira_markup import (
     LogAttachments,
     bold,
     build_comment,
@@ -169,7 +169,7 @@ def test_build_comment_starts_with_status_badge() -> None:
 
 def test_build_comment_ends_with_signoff() -> None:
     out = build_comment(_draft())
-    assert "_— daeyeon-bot 🐥_" in out
+    assert "_— hyejin-bot 🐥_" in out
     assert out.endswith("\n")
 
 

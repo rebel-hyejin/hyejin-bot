@@ -1,7 +1,7 @@
-# daeyeon-bot — Implementation Plan
+# hyejin-bot — Implementation Plan
 
 > **Status**: v1 (수렴 후 첫 작성, 2026-05-01)
-> **Owner**: daeyeon.lee@rebellions.ai
+> **Owner**: hyejin.han@rebellions.ai
 > **Scope**: 개인용 Claude Bot daemon. 4 라운드 9 시각 설계 리뷰 거쳐 v4-final로 수렴된 골격을 기반으로 단계별 구현.
 
 ---
@@ -39,9 +39,9 @@
 
 - [ ] `just install-mac` 한 번으로 fresh Mac 에서 launchd daemon 등록까지
 - [ ] `just doctor` 가 토큰 / 권한 / config / 디스크 / 마이그 보류 점검
-- [ ] 봇이 켜진 상태에서 `daeyeon-bot dev fire manual --message "ping"` → 30초 내 echo handler 가 Claude 응답을 events 테이블에 기록
+- [ ] 봇이 켜진 상태에서 `hyejin-bot dev fire manual --message "ping"` → 30초 내 echo handler 가 Claude 응답을 events 테이블에 기록
 - [ ] 강제 재시작 (`kill -KILL`) 후 in-flight 이벤트가 `interrupted` 로 마킹되어 다음 부팅 시 정책에 맞게 재개 또는 DLQ
-- [ ] `daeyeon-bot inspect status` 가 outbox / in-flight / quarantined / quota 스냅샷 표시
+- [ ] `hyejin-bot inspect status` 가 outbox / in-flight / quarantined / quota 스냅샷 표시
 - [ ] `tests/integration/` 의 모든 contract 테스트 통과
 
 ---
@@ -66,7 +66,7 @@ cli/         Typer 진입점. 5 파일로 묶음.
                  ↓
          entrypoint.sh (umask 0o077, 토큰 fetch)
                  ↓
-         daeyeon-bot run
+         hyejin-bot run
                  ↓
    app/lifecycle.py:boot()
         │
@@ -210,7 +210,7 @@ core.errors.BotError
 - 핸들러별 token bucket: manifest 또는 config 으로 지정.
 - 모든 토큰 차감은 *원자적 SQL UPDATE*: `UPDATE buckets SET tokens = tokens - 1 WHERE name=? AND tokens >= 1`.
 - Refill: 같은 UPDATE 안에서 `MAX(capacity, tokens + (now - last_refill) * rate)` 계산.
-- Kill-switch: `~/.daeyeon-bot/PAUSE` 파일이 존재하면 Claude 호출 전에 차단.
+- Kill-switch: `~/.hyejin-bot/PAUSE` 파일이 존재하면 Claude 호출 전에 차단.
 - `cli lifecycle pause` / `resume` 이 PAUSE 파일을 만들고 지움.
 
 ### 3.6 Replay
@@ -371,7 +371,7 @@ PRAGMA foreign_keys=ON;
 
 ```toml
 [runtime]
-state_dir = "~/.daeyeon-bot"        # state.db, PAUSE, heartbeat 위치
+state_dir = "~/.hyejin-bot"        # state.db, PAUSE, heartbeat 위치
 shutdown_budget_seconds = 180
 
 [logging]
@@ -392,13 +392,13 @@ handler_per_hour = 10                # 미지정 핸들러 기본값
 
 [secrets]
 provider = "keychain"                # "keychain" | "file" | "env" (dev only)
-keychain_service = "daeyeon-bot"
+keychain_service = "hyejin-bot"
 keychain_account = "oauth_token"
-file_path = "/etc/daeyeon-bot/oauth_token"
+file_path = "/etc/hyejin-bot/oauth_token"
 
 [claude]
 model = "claude-opus-4-7"            # 핸들러별 오버라이드 가능
-default_system_prompt = "You are daeyeon's helpful assistant."
+default_system_prompt = "You are hyejin's helpful assistant."
 
 # Trigger 선언 (이름이 곧 키)
 [triggers.manual]
@@ -467,16 +467,16 @@ class Handler(Protocol[E_contra]):
 - `.gitignore` / `.env.example` / `config.example.toml` (템플릿만)
 - `README.md` 골격
 - `CONTRACTS.md` (이 PLAN 의 §3 추출)
-- `src/daeyeon_bot/` 안의 빈 디렉토리/`__init__.py`
-- `src/daeyeon_bot/cli/main.py` 에 `daeyeon-bot run/doctor` 가 NotImplementedError 던지는 stub
+- `src/hyejin_bot/` 안의 빈 디렉토리/`__init__.py`
+- `src/hyejin_bot/cli/main.py` 에 `hyejin-bot run/doctor` 가 NotImplementedError 던지는 stub
 - `tests/` 디렉토리 구조 + 첫 테스트 (import smoke)
 
 **Acceptance**:
 - [ ] `uv sync` 성공
 - [ ] `just lint` 통과 (빈 파일 기준)
 - [ ] `just test` 통과 (1 개 smoke 테스트)
-- [ ] `daeyeon-bot --help` 출력
-- [ ] `daeyeon-bot doctor` 가 NotImplementedError 로 fail
+- [ ] `hyejin-bot --help` 출력
+- [ ] `hyejin-bot doctor` 가 NotImplementedError 로 fail
 
 ---
 
@@ -501,10 +501,10 @@ class Handler(Protocol[E_contra]):
 14. `cli/main.py` + `cli/lifecycle.py:run` + `cli/dev.py:fire`
 
 **Acceptance**:
-- [ ] `daeyeon-bot run` 으로 daemon 떠 있음
-- [ ] 다른 터미널에서 `daeyeon-bot dev fire manual --message "hello"` 발화
+- [ ] `hyejin-bot run` 으로 daemon 떠 있음
+- [ ] 다른 터미널에서 `hyejin-bot dev fire manual --message "hello"` 발화
 - [ ] 5초 내 echo handler 가 fake Claude 응답을 events / runs 테이블에 기록
-- [ ] events / outbox / runs 테이블 상태 정상 (`sqlite3 ~/.daeyeon-bot/state.db ".dump"`)
+- [ ] events / outbox / runs 테이블 상태 정상 (`sqlite3 ~/.hyejin-bot/state.db ".dump"`)
 - [ ] Ctrl-C 로 깔끔히 종료 (모든 task cancel)
 - [ ] integration test: fake Claude + manual trigger + echo handler end-to-end 1 회 통과
 
@@ -529,7 +529,7 @@ class Handler(Protocol[E_contra]):
 - [ ] idempotent=False 핸들러는 interrupted → dead_letter 로 이동
 - [ ] 일부러 `TransientError` 던지는 테스트 핸들러 → exp-backoff 후 ACK
 - [ ] `PermanentError` 5번 / 10 분 던지는 테스트 trigger → quarantine 마킹
-- [ ] 두 번째 `daeyeon-bot run` 인스턴스는 flock 으로 즉시 실패
+- [ ] 두 번째 `hyejin-bot run` 인스턴스는 flock 으로 즉시 실패
 - [ ] shutdown 시간 budget 초과 케이스 테스트 (handler 가 200s 자는 척)
 
 ---
@@ -583,9 +583,9 @@ class Handler(Protocol[E_contra]):
 **목적**: Mac 과 Linux 양쪽에서 daemon 으로 등록.
 
 **구현**:
-1. `deploy/launchd/ai.rebellions.daeyeon-bot.plist` (KeepAlive, ThrottleInterval, StandardErrorPath)
+1. `deploy/launchd/ai.rebellions.hyejin-bot.plist` (KeepAlive, ThrottleInterval, StandardErrorPath)
 2. `deploy/launchd/entrypoint.sh` (umask, Keychain fetch, exec)
-3. `deploy/systemd/daeyeon-bot.service` (Type=notify, WatchdogSec=60, TimeoutStopSec=180, Protect*, NoNewPrivileges, LoadCredential)
+3. `deploy/systemd/hyejin-bot.service` (Type=notify, WatchdogSec=60, TimeoutStopSec=180, Protect*, NoNewPrivileges, LoadCredential)
 4. `deploy/systemd/journald.conf` / `tmpfiles.conf`
 5. `scripts/install-mac.sh` / `scripts/install-linux.sh`
 6. `scripts/setup-token.sh` (claude setup-token → Keychain 저장 안내)
@@ -596,7 +596,7 @@ class Handler(Protocol[E_contra]):
 - [ ] 재부팅 후 자동 시작 확인
 - [ ] `launchctl kickstart -k` 으로 강제 재시작 후 `inspect status` 정상
 - [ ] (사내 서버에 SSH 가능 시) `scripts/install-linux.sh` 로 systemd unit 등록 + `systemctl status` 정상
-- [ ] `systemd-analyze security daeyeon-bot` 점수 5점 이하 (낮을수록 안전)
+- [ ] `systemd-analyze security hyejin-bot` 점수 5점 이하 (낮을수록 안전)
 
 ---
 
@@ -675,9 +675,9 @@ tests/
 
 | # | 항목 | 결정 |
 |---|---|---|
-| Q0 | 프로젝트 이름 | `daeyeon-bot` |
+| Q0 | 프로젝트 이름 | `hyejin-bot` |
 | Q1 | Git 관리 | 로컬 only (이번 iteration 에선 GitHub 원격 없음). 다음 iteration 에서 원격 푸시 검토. |
-| Q2 | state 디렉토리 | `~/.daeyeon-bot` |
+| Q2 | state 디렉토리 | `~/.hyejin-bot` |
 | Q3 | Python 버전 | 3.12 (`.python-version` 고정) |
 | Q4 | 첫 실제 trigger / handler | **GitHub PR self-review (S3)** — 본인이 PR 을 열면 봇이 자동으로 self-review 코멘트. Phase 4 (실제 Claude 연결 후) 에서 trigger=GitHub webhook, handler=`pr-self-review`. Phase 1–3 까지는 `manual` + `echo` 만으로 골격 검증. |
 
@@ -703,4 +703,4 @@ tests/
 ## Changelog
 
 - **2026-05-01 v1**: 첫 작성. 4 라운드 리뷰 거쳐 v4-final 구조 확정 후.
-- **2026-05-03 v1.1**: 결정 5건 반영 — 프로젝트명 `daeyeon-bot`, Git 로컬 only, state `~/.daeyeon-bot`, Python 3.12, 첫 실제 시나리오 = GitHub PR self-review (S3, Phase 4 착수). §8 Open Questions 분리 (8.1 결정됨 / 8.2 미결).
+- **2026-05-03 v1.1**: 결정 5건 반영 — 프로젝트명 `hyejin-bot`, Git 로컬 only, state `~/.hyejin-bot`, Python 3.12, 첫 실제 시나리오 = GitHub PR self-review (S3, Phase 4 착수). §8 Open Questions 분리 (8.1 결정됨 / 8.2 미결).

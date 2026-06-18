@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from daeyeon_bot.infra.loki import LokiClient, LokiQueryBuilder
+from hyejin_bot.infra.loki import LokiClient, LokiQueryBuilder
 
 
 def _client(handler: httpx.MockTransport, **kwargs: object) -> LokiClient:

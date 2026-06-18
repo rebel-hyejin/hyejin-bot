@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from daeyeon_bot.infra.claude import FakeClaudeSession
+from hyejin_bot.infra.claude import FakeClaudeSession
 
 
 async def test_default_echo() -> None:

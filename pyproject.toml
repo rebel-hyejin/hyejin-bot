@@ -1,12 +1,12 @@
 [project]
-name = "daeyeon-bot"
+name = "hyejin-bot"
 version = "0.0.1"
-description = "Personal Claude bot daemon — daeyeon's at-home assistant."
+description = "Personal Claude bot daemon — hyejin's at-home assistant."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "Proprietary" }
 authors = [
-    { name = "daeyeon.lee", email = "daeyeon.lee@rebellions.ai" },
+    { name = "hyejin.han", email = "hyejin.han@rebellions.ai" },
 ]
 keywords = ["claude", "agent", "daemon", "bot"]
 classifiers = [
@@ -32,20 +32,20 @@ dependencies = [
 ]
 
 [project.scripts]
-daeyeon-bot = "daeyeon_bot.cli.main:app"
+hyejin-bot = "hyejin_bot.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/rebellions-sw/daeyeon-bot"
+Homepage = "https://github.com/rebellions-sw/hyejin-bot"
 
 [build-system]
 requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/daeyeon_bot"]
+packages = ["src/hyejin_bot"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/daeyeon_bot", "README.md", "CONTRACTS.md", "docs/PLAN.md"]
+include = ["src/hyejin_bot", "README.md", "CONTRACTS.md", "docs/PLAN.md"]
 
 [dependency-groups]
 dev = [
@@ -93,7 +93,7 @@ ignore = [
 extend-immutable-calls = ["typer.Argument", "typer.Option"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["daeyeon_bot"]
+known-first-party = ["hyejin_bot"]
 
 [tool.pyright]
 include = ["src", "tests"]
@@ -114,7 +114,7 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
-    "--cov=daeyeon_bot",
+    "--cov=hyejin_bot",
     "--cov-report=term-missing:skip-covered",
 ]
 testpaths = ["tests"]
@@ -126,7 +126,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["daeyeon_bot"]
+source = ["hyejin_bot"]
 
 [tool.coverage.report]
 exclude_lines = [

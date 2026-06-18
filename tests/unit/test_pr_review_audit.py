@@ -8,14 +8,14 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.infra.pr_review_audit import (
+from hyejin_bot.infra.pr_review_audit import (
     find_latest,
     insert_audit,
     list_for_pr,
     list_recent,
     record_supersede,
 )
-from daeyeon_bot.infra.storage import apply_migrations, open_db
+from hyejin_bot.infra.storage import apply_migrations, open_db
 
 
 async def _seed_event(conn: aiosqlite.Connection, event_id: str = "evt-1") -> str:

@@ -3,7 +3,7 @@
 **Feature Branch**: `001-github-pr-review-bot`
 **Created**: 2026-05-04
 **Status**: Draft
-**Input**: User description: "Github PR 리뷰 자동화 봇 — 나에게 요청된 PR 리뷰가 있으면 자동으로 코드 리뷰를 달아준다. 리뷰는 운영자만의 code review skill 또는 daeyeon-bot의 코드 리뷰 지향점을 담은 페르소나에 기반하며, 출력에는 Summary가 반드시 포함되고 지적·보완 사항은 inline comment로 단다."
+**Input**: User description: "Github PR 리뷰 자동화 봇 — 나에게 요청된 PR 리뷰가 있으면 자동으로 코드 리뷰를 달아준다. 리뷰는 운영자만의 code review skill 또는 hyejin-bot의 코드 리뷰 지향점을 담은 페르소나에 기반하며, 출력에는 Summary가 반드시 포함되고 지적·보완 사항은 inline comment로 단다."
 
 ## Clarifications
 

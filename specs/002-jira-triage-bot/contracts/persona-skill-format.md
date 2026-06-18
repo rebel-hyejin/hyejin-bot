@@ -23,17 +23,17 @@ are called out below.
 
 - `{name}` is the directory's basename, also the value the operator
   puts in `[handlers.jira_triage].persona_skill = "{name}"` in
-  `config.toml`. Default: `"daeyeon-bot-jira-triage"`.
+  `config.toml`. Default: `"hyejin-bot-jira-triage"`.
 - Multiple variants live as sibling directories.
 - Switching variants is a config edit + reload — no code change.
 
 The bot resolves `~` against the daemon's HOME at boot. Symlinked
 directories work; the bot stats the symlink target for mtime.
 
-**Repo-bundled default**: `daeyeon-bot/.claude/skills/daeyeon-bot-jira-triage/SKILL.md`
+**Repo-bundled default**: `hyejin-bot/.claude/skills/hyejin-bot-jira-triage/SKILL.md`
 ships with the repo. A fresh checkout has a working persona out of the
 box (no operator setup required for first triage). The operator
-override at `~/.claude/skills/daeyeon-bot-jira-triage/SKILL.md` wins
+override at `~/.claude/skills/hyejin-bot-jira-triage/SKILL.md` wins
 when present.
 
 ---
@@ -42,8 +42,8 @@ when present.
 
 ```markdown
 ---
-name: daeyeon-bot-jira-triage
-description: daeyeon의 SSWCI regression-failure 자동 트리아지 페르소나. ...
+name: hyejin-bot-jira-triage
+description: hyejin의 SSWCI regression-failure 자동 트리아지 페르소나. ...
 allowed-tools: []        # Stage 1 (PR-2): no tool calls. Stage 2 (PR-4): Skill tool added.
 ---
 
@@ -87,7 +87,7 @@ validates:
 
 Any failure returns a `DeadLetter` from the handler — no generic
 fallback comment is ever generated. Operator must repair the persona
-and `daeyeon-bot ops replay --confirm` to resume.
+and `hyejin-bot ops replay --confirm` to resume.
 
 ---
 
@@ -155,7 +155,7 @@ instructions and Claude will use them once the harness allows.
 ### SHOULD
 
 - Tone, evidence bar, language preference (Korean prose).
-- Operating principles encoding daeyeon's debugging style.
+- Operating principles encoding hyejin's debugging style.
 - Domain classification rules.
 - Example evidence citations the operator considers good.
 
@@ -182,13 +182,13 @@ the redaction processor as the safety net for output.
 
 ```markdown
 ---
-name: daeyeon-bot-jira-triage
-description: daeyeon의 SSWCI regression-failure 자동 트리아지 페르소나.
+name: hyejin-bot-jira-triage
+description: hyejin의 SSWCI regression-failure 자동 트리아지 페르소나.
 ---
 
 # Role
-당신은 daeyeon-bot이 새 regression-failure 티켓에 다는 first-pass 트리아지
-코멘트를 만든다. fix-it bot이 아니다. daeyeon이 출근해서 보면 "어느 layer
+당신은 hyejin-bot이 새 regression-failure 티켓에 다는 first-pass 트리아지
+코멘트를 만든다. fix-it bot이 아니다. hyejin이 출근해서 보면 "어느 layer
 인지, 어떤 증거가 있는지, 다음에 뭘 모아야 하는지"가 이미 정리돼 있는 게
 목표.
 
@@ -212,7 +212,7 @@ summary_md는 한국어 산문 + 영어 기술어/경로/로그 라인 원문 �
 
 This file is 200+ chars after frontmatter strip and has multiple
 non-blank lines, so it passes the FR-007 sanity check. It is NOT a
-complete production persona — see `daeyeon-bot/.claude/skills/daeyeon-bot-jira-triage/SKILL.md`
+complete production persona — see `hyejin-bot/.claude/skills/hyejin-bot-jira-triage/SKILL.md`
 for the shipped version which includes the full Domain classification
 table and Stage 1/Stage 2 split.
 
@@ -220,7 +220,7 @@ table and Stage 1/Stage 2 split.
 
 ## 9. Cross-reference to feature 001
 
-`daeyeon-bot-code-review` (pr_review's persona) is a sibling
+`hyejin-bot-code-review` (pr_review's persona) is a sibling
 persona. Both use the same loader (`infra/persona_loader.py`), the
 same validation rules, and the same frontmatter-ignore semantics. The
 operator typically authors both as separate skills in

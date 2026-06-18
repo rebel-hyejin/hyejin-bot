@@ -1,4 +1,4 @@
-# daeyeon-bot — example configuration.
+# hyejin-bot — example configuration.
 #
 # Copy to `config.toml` (gitignored) and edit. The path can be overridden with
 # DAEYEON_BOT_CONFIG. All keys here are also overridable via env using the
@@ -7,7 +7,7 @@
 [runtime]
 # Where state.db, PAUSE flag, heartbeat file, and *.bak backups live.
 # Tilde is expanded at load time.
-state_dir = "~/.daeyeon-bot"
+state_dir = "~/.hyejin-bot"
 # 2-phase shutdown total budget (seconds). Phase A drain + Phase B finalize.
 shutdown_budget_seconds = 180
 
@@ -48,13 +48,13 @@ handler_per_hour = 10
 #   "env"      — read CLAUDE_CODE_OAUTH_TOKEN from environment. **DEV ONLY**;
 #                daemon requires `--insecure-env` flag to use this.
 provider = "keychain"
-keychain_service = "daeyeon-bot"
+keychain_service = "hyejin-bot"
 keychain_account = "oauth_token"
-file_path = "/etc/daeyeon-bot/oauth_token"
+file_path = "/etc/hyejin-bot/oauth_token"
 
 [claude]
 model = "claude-opus-4-7"
-default_system_prompt = "You are daeyeon's helpful assistant."
+default_system_prompt = "You are hyejin's helpful assistant."
 
 [github]
 # Operator's GitHub username. Resolved at boot via `gh api user` if absent.
@@ -131,13 +131,13 @@ dedup_ttl_seconds = 86400
 concurrency = 1
 accepts = ["gh.review_requested", "pr.review.manual"]
 # Active persona (skill directory name under <skills_root>/<name>/SKILL.md).
-# `daeyeon-bot-code-review` ships in this repo at .claude/skills/ and is the
+# `hyejin-bot-code-review` ships in this repo at .claude/skills/ and is the
 # default `skills_root`, so no extra setup is needed.
-persona_skill = "daeyeon-bot-code-review"
+persona_skill = "hyejin-bot-code-review"
 # Minimum body length after frontmatter strip; below this, persona is invalid.
 min_persona_chars = 200
 # Optional override for where to look for `<persona_skill>/SKILL.md`.
-# Default: the repo-bundled `.claude/skills/` next to the daeyeon_bot package.
+# Default: the repo-bundled `.claude/skills/` next to the hyejin_bot package.
 # Set to "~/.claude/skills" if you keep your personas in the standard
 # Claude Code skills directory, or any absolute path you prefer.
 # skills_root = "~/.claude/skills"
@@ -155,7 +155,7 @@ min_persona_chars = 200
 # quality knob. A blocked PR yields `audit.status = skipped_disallowed_repo`.
 # Examples:
 #   allowed_repos = ["rebellions-sw/*"]                          # whole org
-#   allowed_repos = ["rebellions-sw/daeyeon-bot",                # specific repos
+#   allowed_repos = ["rebellions-sw/ssw-bundle",                 # specific repos
 #                    "rebellions-sw/another-repo"]
 #   allowed_repos = ["rebellions-sw/*", "octo/cat"]              # mixed
 allowed_repos = []
@@ -185,8 +185,8 @@ accepts = ["jira.assigned", "jira.triage.manual"]
 # (defense in depth). SSWCI is the v1 target.
 allowed_projects = ["SSWCI"]
 # Persona (skill directory name under <skills_root>/<name>/SKILL.md).
-# `daeyeon-bot-jira-triage` ships with this repo under .claude/skills/.
-persona_skill = "daeyeon-bot-jira-triage"
+# `hyejin-bot-jira-triage` ships with this repo under .claude/skills/.
+persona_skill = "hyejin-bot-jira-triage"
 min_persona_chars = 200
 # Per-event wall-clock budget covering all stages (Jira fetch, ssw-bundle
 # checkout, Loki query, SSH fetch, Claude call, comment post). Two timeouts

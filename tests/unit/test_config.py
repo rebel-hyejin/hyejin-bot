@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.config import (
+from hyejin_bot.app.config import (
     Config,
     GhReviewRequestedTriggerEntry,
     GitHubConfig,
@@ -29,7 +29,7 @@ def test_example_toml_parses(tmp_path: Path) -> None:
     dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
 
     cfg = load(str(dst))
-    assert cfg.runtime.state_dir.endswith("daeyeon-bot")
+    assert cfg.runtime.state_dir.endswith("hyejin-bot")
     assert cfg.logging.format in {"json", "console"}
     # routing / triggers / handlers go into `raw` for now (Phase 1 promotes them to typed).
     assert "routing" in cfg.raw or "triggers" in cfg.raw
@@ -224,4 +224,4 @@ def test_example_toml_parses_jira_sections(tmp_path: Path) -> None:
     assert trigger.enabled is False  # default off, runtime opt-in
     handler = cfg.jira_triage_handler_entry()
     assert handler.enabled is False
-    assert handler.persona_skill == "daeyeon-bot-jira-triage"
+    assert handler.persona_skill == "hyejin-bot-jira-triage"

@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.config import load
-from daeyeon_bot.app.container import ContainerOverrides
-from daeyeon_bot.app.lifecycle import BootOptions, boot
-from daeyeon_bot.core.events import Event, make_event
-from daeyeon_bot.core.protocols import HandlerContext
-from daeyeon_bot.core.results import Ack, HandlerResult
-from daeyeon_bot.handlers import echo as echo_handler
-from daeyeon_bot.infra import outbox, storage
-from daeyeon_bot.infra.claude import FakeClaudeSession
+from hyejin_bot.app.config import load
+from hyejin_bot.app.container import ContainerOverrides
+from hyejin_bot.app.lifecycle import BootOptions, boot
+from hyejin_bot.core.events import Event, make_event
+from hyejin_bot.core.protocols import HandlerContext
+from hyejin_bot.core.results import Ack, HandlerResult
+from hyejin_bot.handlers import echo as echo_handler
+from hyejin_bot.infra import outbox, storage
+from hyejin_bot.infra.claude import FakeClaudeSession
 
 pytestmark = pytest.mark.integration
 
@@ -104,7 +104,7 @@ async def test_drain_timeout_marks_in_flight_as_interrupted(
 ) -> None:
     """A handler that exceeds the drain budget gets cancelled and its row
     flipped to 'interrupted'."""
-    monkeypatch.setattr("daeyeon_bot.app.lifecycle.PHASE_B_BUDGET_S", 0.5)
+    monkeypatch.setattr("hyejin_bot.app.lifecycle.PHASE_B_BUDGET_S", 0.5)
 
     state_dir = tmp_path / "state"
     state_dir.mkdir()
@@ -125,8 +125,8 @@ async def test_drain_timeout_marks_in_flight_as_interrupted(
             await asyncio.sleep(60)
             return Ack()
 
-    from daeyeon_bot.app import registry as registry_mod
-    from daeyeon_bot.app.registry import HandlerRecord
+    from hyejin_bot.app import registry as registry_mod
+    from hyejin_bot.app.registry import HandlerRecord
 
     original = registry_mod.instantiate_handler
 

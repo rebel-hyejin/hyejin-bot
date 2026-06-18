@@ -6,7 +6,7 @@ touching anything load-bearing.
 
 ## What this is
 
-Personal Claude bot **daemon** for one operator (daeyeon.lee@rebellions.ai).
+Personal Claude bot **daemon** for one operator (hyejin.han@rebellions.ai).
 24/7 single-process. Wakes on triggers (manual / cron / webhook / file
 watch / Slack), dispatches each event to a handler, and calls Claude on
 the operator's Pro/Max OAuth subscription. **Not SaaS, not multi-tenant,
@@ -28,7 +28,7 @@ Phases 0–7 of `docs/PLAN.md` are landed:
 | 5 | Deployment: launchd plist + entrypoint, systemd unit (Type=notify), install scripts, setup-token. |
 | 6 | Hardening: events retention with FK-aware cascade, hot SQLite backup, heartbeat self-alert, runbook. |
 | 7 | GitHub PR-review bot (feature 001) — `gh_review_requested` polling trigger + `pr_review` handler. Lands behind `[handlers.pr_review].enabled = false`; flip to enable. Persona reloaded from `~/.claude/skills/pr-reviewer/SKILL.md` on every event by mtime. Migration 002 adds `gh_review_requested_state` + `pr_review_audit`. Auth flows through the operator's local `gh` CLI. Opt-in `[handlers.pr_review].review_self = true` also reviews the operator's own PRs (discovered via an `author:<operator>` search; always posted as COMMENT since GitHub rejects self-APPROVE). |
-| 8 | Jira regression triage (feature 002) — `jira_assigned` polling trigger + `jira_triage` handler. Auto-triages SSWCI tickets assigned to daeyeon or the DevOps Team: clones ssw-bundle at the parent Epic's branch+commit, fetches Loki streams (kernel/syslog/fwlog/smclog via `[rbln-fwi]` and bmc-sel labels) + SSH artifacts + evidence-driven `products/` source grep, then synthesizes a 4-section Jira wiki-markup comment (Summary / Evidences / Analysis / Action Items) with windowed `{code}` log attachments. Persona at `.claude/skills/daeyeon-bot-jira-triage/SKILL.md`. Migration 005 adds `jira_assigned_state` + `jira_triage_audit`. |
+| 8 | Jira regression triage (feature 002) — `jira_assigned` polling trigger + `jira_triage` handler. Auto-triages SSWCI tickets assigned to hyejin or the DevOps Team: clones ssw-bundle at the parent Epic's branch+commit, fetches Loki streams (kernel/syslog/fwlog/smclog via `[rbln-fwi]` and bmc-sel labels) + SSH artifacts + evidence-driven `products/` source grep, then synthesizes a 4-section Jira wiki-markup comment (Summary / Evidences / Analysis / Action Items) with windowed `{code}` log attachments. Persona at `.claude/skills/hyejin-bot-jira-triage/SKILL.md`. Migration 005 adds `jira_assigned_state` + `jira_triage_audit`. |
 
 Built-in triggers: `manual`, `gh_review_requested`, `jira_assigned`. Built-in handlers:
 `echo`, `pr_review`, `jira_triage`. Other workloads (cron, webhook, slack, digest, …) are
@@ -47,9 +47,9 @@ just test              # pytest with coverage; passes args through
 just test-unit         # only tests/unit
 just test-integration  # only tests marked `integration`
 just check             # lint + typecheck + test  (pre-commit aggregate)
-just run               # daeyeon-bot run (foreground daemon)
-just doctor            # daeyeon-bot ops doctor
-just status            # daeyeon-bot inspect status
+just run               # hyejin-bot run (foreground daemon)
+just doctor            # hyejin-bot ops doctor
+just status            # hyejin-bot inspect status
 just migrate           # apply DDL migrations
 just backup            # hot SQLite snapshot + prune to backup_keep
 just prune             # apply retention defaults
@@ -174,7 +174,7 @@ Do not catch and translate exceptions inside handlers — return
   `PRAGMA journal_mode=WAL; synchronous=NORMAL; busy_timeout=5000; foreign_keys=ON`.
   `infra/storage.py:open_db` enforces this; never construct an
   `aiosqlite.connect()` directly.
-- DDL lives in `src/daeyeon_bot/infra/db/migrations/NNN_*.sql`.
+- DDL lives in `src/hyejin_bot/infra/db/migrations/NNN_*.sql`.
   **Linear, additive, never rewritten in place.** `meta.schema_version`
   is the only source of truth.
 - `events.id` is UUIDv7 (sortable). `outbox.id` is auto-increment.
@@ -226,12 +226,12 @@ flags itself.
 
 ## Runtime layout
 
-State directory: `~/.daeyeon-bot/` (config knob `runtime.state_dir`).
+State directory: `~/.hyejin-bot/` (config knob `runtime.state_dir`).
 
 | File | Purpose |
 |---|---|
 | `state.db` (+ `-wal`, `-shm`) | SQLite WAL primary store. |
-| `daeyeon-bot.pid` | Pidfile + flock — single-instance enforcement. |
+| `hyejin-bot.pid` | Pidfile + flock — single-instance enforcement. |
 | `heartbeat` | Touched every `tick_s`; mtime is the liveness signal. |
 | `PAUSE` | Operator kill-switch — presence blocks Claude calls before rate-limit check. |
 | `backups/state-<UTC>.db` | Snapshots from `just backup`, pruned to `retention.backup_keep`. |
@@ -249,11 +249,11 @@ Exit codes the CLI returns:
 
 ### Add a new handler
 
-1. `src/daeyeon_bot/handlers/<name>.py`:
+1. `src/hyejin_bot/handlers/<name>.py`:
    ```python
-   from daeyeon_bot.core.manifest import HandlerManifest
-   from daeyeon_bot.core.protocols import Handler
-   from daeyeon_bot.core.results import Ack, HandlerResult
+   from hyejin_bot.core.manifest import HandlerManifest
+   from hyejin_bot.core.protocols import Handler
+   from hyejin_bot.core.results import Ack, HandlerResult
    from datetime import timedelta
 
    MANIFEST = HandlerManifest(
@@ -276,7 +276,7 @@ Exit codes the CLI returns:
 
 ### Add a new trigger
 
-1. `src/daeyeon_bot/triggers/<name>.py` exposing `MANIFEST: TriggerManifest`
+1. `src/hyejin_bot/triggers/<name>.py` exposing `MANIFEST: TriggerManifest`
    and an async `emit_one(...)` that writes through
    `infra/outbox.insert_event()` + `infra/outbox.enqueue_handler()` in a
    single transaction (the `events.UNIQUE(source, source_dedup_key)`
@@ -288,7 +288,7 @@ Exit codes the CLI returns:
 
 ### Add a SQL column or table
 
-1. New file `src/daeyeon_bot/infra/db/migrations/NNN_<short_description>.sql`.
+1. New file `src/hyejin_bot/infra/db/migrations/NNN_<short_description>.sql`.
    `IF NOT EXISTS` and additive only. **Never edit existing migrations.**
 2. Run `just migrate` locally; verify the new `meta.schema_version`.
 3. Update `docs/PLAN.md` §4.1 (the canonical schema dump) and any test
@@ -314,7 +314,7 @@ Update **all three** in the same commit:
 - Operations: `docs/RUNBOOK.md` (routine ops + Mac/Linux parity + 5 incident playbooks).
 - Design questions: `docs/PLAN.md`.
 - Interface guarantees: `CONTRACTS.md`.
-- Live state: `daeyeon-bot ops doctor && daeyeon-bot inspect status`.
+- Live state: `hyejin-bot ops doctor && hyejin-bot inspect status`.
 
 ## Active Technologies
 - Python 3.12 (`requires-python = ">=3.12,<3.13"` in `pyproject.toml`). + existing — `claude-agent-sdk`, `pydantic` (v2), `pydantic-settings`, `structlog`, `aiosqlite`, `typer`, `keyring`, `uuid-utils`. No new runtime deps; GitHub access goes through the operator's local `gh` CLI via subprocess. (001-github-pr-review-bot)

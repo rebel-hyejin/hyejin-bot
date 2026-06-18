@@ -16,10 +16,10 @@ from typing import Any
 
 import pytest
 
-from daeyeon_bot.core.errors import AuthError
-from daeyeon_bot.core.time import Clock, SystemClock
-from daeyeon_bot.infra import storage
-from daeyeon_bot.triggers.gh_review_requested import (
+from hyejin_bot.core.errors import AuthError
+from hyejin_bot.core.time import Clock, SystemClock
+from hyejin_bot.infra import storage
+from hyejin_bot.triggers.gh_review_requested import (
     GhReviewRequestedTrigger,
     build_search_extra_query,
 )
@@ -50,7 +50,7 @@ def _trigger(*, gh: FakeGh, db_path: Path, **kwargs: Any) -> GhReviewRequestedTr
     return GhReviewRequestedTrigger(
         gh=gh,
         storage_factory=factory,
-        github_username=kwargs.pop("username", "daeyeon-lee"),
+        github_username=kwargs.pop("username", "hyejin-lee"),
         poll_interval_seconds=kwargs.pop("poll_interval_seconds", 0.01),
         clock=kwargs.pop("clock", SystemClock()),
         pause_check=pause_check,
@@ -138,7 +138,7 @@ async def test_review_self_unions_authored_search(db_path: Path) -> None:
         REPO,
         PR + 1,
         head_sha="sha2",
-        author="daeyeon-lee",
+        author="hyejin-lee",
         in_search_set=False,
         in_authored_set=True,
     )
@@ -160,7 +160,7 @@ async def test_review_self_disabled_ignores_authored_search(db_path: Path) -> No
         REPO,
         PR + 1,
         head_sha="sha2",
-        author="daeyeon-lee",
+        author="hyejin-lee",
         in_search_set=False,
         in_authored_set=True,
     )
@@ -260,8 +260,8 @@ async def test_dedup_key_uniqueness_across_polls(db_path: Path) -> None:
 
     # Manually re-emit at the same (head_sha, gen) by short-circuiting the
     # state machine: directly call _emit_event again with gen=1.
-    from daeyeon_bot.core.time import SystemClock
-    from daeyeon_bot.triggers.gh_review_requested import (
+    from hyejin_bot.core.time import SystemClock
+    from hyejin_bot.triggers.gh_review_requested import (
         _emit_event,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -320,7 +320,7 @@ async def test_run_loop_swallows_rate_limit_and_transient_then_succeeds(
     db_path: Path,
 ) -> None:
     """run() must keep looping on RateLimitError / TransientError."""
-    from daeyeon_bot.core.errors import TransientError
+    from hyejin_bot.core.errors import TransientError
 
     gh = FakeGh()
     gh.add_pr(REPO, PR, head_sha="sha1", in_search_set=True)
@@ -386,7 +386,7 @@ async def test_poll_once_handles_pr_get_failure_for_persisted_pr(
 ) -> None:
     """When pr_get fails on an observed PR that has a persisted state row,
     the row must be left untouched (treated as not-observed for this cycle)."""
-    from daeyeon_bot.core.errors import TransientError
+    from hyejin_bot.core.errors import TransientError
 
     class _FlakyGh(FakeGh):
         flake: bool = False
@@ -417,7 +417,7 @@ async def test_poll_once_handles_pr_get_failure_for_persisted_pr(
 
 async def test_parse_search_item_rejects_garbage() -> None:
     """Defensive parsing of `repository_url` and `number`."""
-    from daeyeon_bot.triggers.gh_review_requested import (
+    from hyejin_bot.triggers.gh_review_requested import (
         _parse_search_item,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -432,7 +432,7 @@ async def test_parse_search_item_rejects_garbage() -> None:
 
 async def test_extract_head_sha_handles_malformed_payloads() -> None:
     """`_extract_head_sha` returns None on any unexpected shape."""
-    from daeyeon_bot.triggers.gh_review_requested import (
+    from hyejin_bot.triggers.gh_review_requested import (
         _extract_head_sha,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -495,7 +495,7 @@ _unused_ctx: Any = object()
 async def test_run_loop_stops_when_failure_reporter_returns_true(db_path: Path) -> None:
     """B3: on PermanentError, the trigger reports the failure; if the
     reporter returns True (quarantine threshold tripped), the loop exits."""
-    from daeyeon_bot.core.errors import PermanentError
+    from hyejin_bot.core.errors import PermanentError
 
     class _AlwaysFailGh(FakeGh):
         async def search_review_requested(
@@ -607,7 +607,7 @@ async def test_poll_once_calls_pr_get_when_search_lacks_updated_at(
 async def test_run_loop_does_not_report_transient_failures(db_path: Path) -> None:
     """B3: TransientError / RateLimitError must NOT increment the supervisor —
     those are normal blips, not bug-shaped failures."""
-    from daeyeon_bot.core.errors import TransientError
+    from hyejin_bot.core.errors import TransientError
 
     class _TransientGh(FakeGh):
         calls: int = 0
@@ -667,22 +667,22 @@ def test_build_search_extra_query_multi_owner_drops_narrowing() -> None:
 
 
 def test_build_search_extra_query_single_specific_emits_repo_clause() -> None:
-    fragment = build_search_extra_query(["rebellions-sw/daeyeon-bot"])
-    assert fragment == "repo:rebellions-sw/daeyeon-bot"
+    fragment = build_search_extra_query(["rebellions-sw/hyejin-bot"])
+    assert fragment == "repo:rebellions-sw/hyejin-bot"
 
 
 def test_build_search_extra_query_same_owner_specifics_collapse_to_user() -> None:
     # `(repo:a OR repo:b)` silently returns 0 from GitHub Search; collapse
     # multiple same-owner specifics to a single `user:` qualifier and let
     # the handler-side gate filter to the explicit list.
-    fragment = build_search_extra_query(["rebellions-sw/daeyeon-bot", "rebellions-sw/other"])
+    fragment = build_search_extra_query(["rebellions-sw/hyejin-bot", "rebellions-sw/other"])
     assert fragment == "user:rebellions-sw"
 
 
 def test_build_search_extra_query_specific_subsumed_by_owner_glob() -> None:
-    # `rebellions-sw/*` already covers `rebellions-sw/daeyeon-bot`; specific
+    # `rebellions-sw/*` already covers `rebellions-sw/hyejin-bot`; specific
     # entry is dropped, leaving a single owner -> single `user:` clause.
-    fragment = build_search_extra_query(["rebellions-sw/*", "rebellions-sw/daeyeon-bot"])
+    fragment = build_search_extra_query(["rebellions-sw/*", "rebellions-sw/hyejin-bot"])
     assert fragment == "user:rebellions-sw"
 
 
@@ -690,7 +690,7 @@ def test_build_search_extra_query_mixed_owners_drops_narrowing() -> None:
     # Mixed `owner/*` + specific from a different owner can't be narrowed
     # because GitHub Search doesn't accept OR-ed qualifiers.
     fragment = build_search_extra_query(
-        ["rebellions-sw/*", "rebellions-sw/daeyeon-bot", "octo/cat"]
+        ["rebellions-sw/*", "rebellions-sw/hyejin-bot", "octo/cat"]
     )
     assert fragment == ""
 
@@ -708,7 +708,7 @@ def test_build_search_extra_query_complex_glob_falls_back_to_handler_only() -> N
     "allowed_repos",
     [
         ["rebellions-sw/*"],
-        ["rebellions-sw/daeyeon-bot"],
+        ["rebellions-sw/hyejin-bot"],
         ["rebellions-sw/repo1", "rebellions-sw/repo2"],
         ["rebellions-sw/*", "rebellions-sw/repo1"],
     ],

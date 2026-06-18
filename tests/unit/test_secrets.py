@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.core.errors import AuthError, ConfigError
-from daeyeon_bot.infra import secrets
+from hyejin_bot.core.errors import AuthError, ConfigError
+from hyejin_bot.infra import secrets
 
 
 def test_keychain_returns_token(monkeypatch: pytest.MonkeyPatch) -> None:

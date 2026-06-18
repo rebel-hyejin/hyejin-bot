@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from daeyeon_bot.handlers.pr_review_diff import (
+from hyejin_bot.handlers.pr_review_diff import (
     is_anchor_in_hunk,
     parse_hunk_ranges,
 )

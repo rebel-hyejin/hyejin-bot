@@ -28,16 +28,16 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.app.config import PrReviewHandlerEntry, SizeBudget
-from daeyeon_bot.core.errors import PermanentError, ValidationError
-from daeyeon_bot.core.events import Event, make_event
-from daeyeon_bot.core.results import Ack
-from daeyeon_bot.core.time import Clock, SystemClock
-from daeyeon_bot.handlers.pr_review import MANIFEST, PrReviewHandler
-from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
-from daeyeon_bot.infra.pr_review_audit import find_latest
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
-from daeyeon_bot.infra.storage import apply_migrations, open_db
+from hyejin_bot.app.config import PrReviewHandlerEntry, SizeBudget
+from hyejin_bot.core.errors import PermanentError, ValidationError
+from hyejin_bot.core.events import Event, make_event
+from hyejin_bot.core.results import Ack
+from hyejin_bot.core.time import Clock, SystemClock
+from hyejin_bot.handlers.pr_review import MANIFEST, PrReviewHandler
+from hyejin_bot.infra.claude import FakeClaudeSession, FakeFactory
+from hyejin_bot.infra.pr_review_audit import find_latest
+from hyejin_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.infra.storage import apply_migrations, open_db
 from tests.fakes.gh_cli import FakeGh
 from tests.fakes.pr_persona import materialize_persona
 
@@ -267,7 +267,7 @@ async def test_system_prompt_carries_persona_and_json_schema(tmp_path: Path) -> 
         assert "<= 1500 chars" in system
         assert "2500 chars" in system
         assert "Korean" in system
-        assert "— daeyeon-bot 🐥" in system
+        assert "— hyejin-bot 🐥" in system
         assert "InlineComment" in system
         assert "MUST NOT contain the sign-off marker" in system
     finally:
@@ -318,7 +318,7 @@ async def test_review_self_downgrades_approve_to_comment(tmp_path: Path) -> None
                     "summary": (
                         "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
                         "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
-                        "— daeyeon-bot 🐥"
+                        "— hyejin-bot 🐥"
                     ),
                     "comments": [],
                 }
@@ -485,7 +485,7 @@ async def test_allowed_repo_proceeds_through_gate(tmp_path: Path) -> None:
     """
     fake_gh = FakeGh()
     fake_gh.add_pr(
-        "rebellions-sw/daeyeon-bot",
+        "rebellions-sw/hyejin-bot",
         7,
         head_sha="deadbeef",
         author="alice",
@@ -508,7 +508,7 @@ async def test_allowed_repo_proceeds_through_gate(tmp_path: Path) -> None:
         event = make_event(
             type="gh.review_requested",  # auto path — allowlist match must proceed
             payload={
-                "repo": "rebellions-sw/daeyeon-bot",
+                "repo": "rebellions-sw/hyejin-bot",
                 "pr_number": 7,
                 "head_sha": "deadbeef",
                 "request_gen": 1,
@@ -519,7 +519,7 @@ async def test_allowed_repo_proceeds_through_gate(tmp_path: Path) -> None:
         await _seed_event_row(conn, event)
         result = await handler.handle(event, _ctx(factory))
         assert isinstance(result, Ack)
-        latest = await find_latest(conn, "rebellions-sw/daeyeon-bot", 7, "deadbeef")
+        latest = await find_latest(conn, "rebellions-sw/hyejin-bot", 7, "deadbeef")
         assert latest is not None
         assert latest.status == "posted"
     finally:
@@ -572,7 +572,7 @@ async def test_manual_reviews_own_pr_even_without_review_self(tmp_path: Path) ->
     `review_self=False` — the explicit command overrides the self-skip."""
     fake_gh = FakeGh()
     fake_gh.add_pr(
-        "rebellions-sw/daeyeon-bot",
+        "rebellions-sw/hyejin-bot",
         7,
         head_sha="deadbeef",
         author=fake_gh.user_login,  # operator's own PR
@@ -594,14 +594,14 @@ async def test_manual_reviews_own_pr_even_without_review_self(tmp_path: Path) ->
         ),
     )
     try:
-        event = _manual_event(repo="rebellions-sw/daeyeon-bot")
+        event = _manual_event(repo="rebellions-sw/hyejin-bot")
         await _seed_event_row(conn, event)
         result = await handler.handle(event, _ctx(factory))
         assert isinstance(result, Ack)
         posted = fake_gh.posted_reviews()
         assert len(posted) == 1
         assert posted[0]["event"] == "COMMENT"  # self-APPROVE still downgraded
-        latest = await find_latest(conn, "rebellions-sw/daeyeon-bot", 7, "deadbeef")
+        latest = await find_latest(conn, "rebellions-sw/hyejin-bot", 7, "deadbeef")
         assert latest is not None
         assert latest.status == "posted"
     finally:
@@ -954,7 +954,7 @@ async def test_pause_guard_short_circuits_before_post(tmp_path: Path) -> None:
         )
     )
     handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
-    from daeyeon_bot.core.errors import QuotaError
+    from hyejin_bot.core.errors import QuotaError
 
     async def _paused() -> None:
         raise QuotaError("paused")
@@ -986,7 +986,7 @@ async def test_verdict_approve_emits_gh_approve_event(tmp_path: Path) -> None:
                     "summary": (
                         "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
                         "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
-                        "— daeyeon-bot 🐥"
+                        "— hyejin-bot 🐥"
                     ),
                     "comments": [],
                 }
@@ -1020,7 +1020,7 @@ async def test_verdict_pass_emits_gh_comment_event(tmp_path: Path) -> None:
                     "summary": (
                         "**Verdict**: PASS — MINOR 1개. 별도 PR 가능.\n\n"
                         "**개요**\n사소한 nit이 하나 있으나 머지 가능.\n\n"
-                        "— daeyeon-bot 🐥"
+                        "— hyejin-bot 🐥"
                     ),
                     "comments": [
                         {
@@ -1062,7 +1062,7 @@ async def test_approve_embeds_lgtm_gif_above_signoff(tmp_path: Path) -> None:
                     "summary": (
                         "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
                         "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
-                        "— daeyeon-bot 🐥"
+                        "— hyejin-bot 🐥"
                     ),
                     "comments": [],
                 }
@@ -1083,7 +1083,7 @@ async def test_approve_embeds_lgtm_gif_above_signoff(tmp_path: Path) -> None:
         assert "https://media.giphy.com/media/" in body
         # Sign-off invariant: GIF goes above it, sign-off remains the last line.
         last_non_empty = next(line for line in reversed(body.split("\n")) if line.strip())
-        assert last_non_empty == "— daeyeon-bot 🐥"
+        assert last_non_empty == "— hyejin-bot 🐥"
     finally:
         await conn.close()
 
@@ -1160,7 +1160,7 @@ async def test_prior_reviews_threaded_into_user_message(tmp_path: Path) -> None:
 
 def test_output_directive_mentions_evidence_discipline() -> None:
     """The persona prompt must instruct: no hypothetical clauses, MINOR self-gate."""
-    from daeyeon_bot.handlers.pr_review_prompt import OUTPUT_DIRECTIVE
+    from hyejin_bot.handlers.pr_review_prompt import OUTPUT_DIRECTIVE
 
     assert "추측 금지" in OUTPUT_DIRECTIVE or "no hypothetical" in OUTPUT_DIRECTIVE.lower()
     assert "MINOR" in OUTPUT_DIRECTIVE

@@ -17,13 +17,13 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from daeyeon_bot.core.errors import AuthError
-from daeyeon_bot.infra.jira_triage_state import (
+from hyejin_bot.core.errors import AuthError
+from hyejin_bot.infra.jira_triage_state import (
     get_state,
     seed_marker_is_set,
 )
-from daeyeon_bot.infra.storage import apply_migrations, open_db
-from daeyeon_bot.triggers.jira_assigned import JiraAssignedTrigger
+from hyejin_bot.infra.storage import apply_migrations, open_db
+from hyejin_bot.triggers.jira_assigned import JiraAssignedTrigger
 from tests.fakes.jira_client import FakeJiraClient
 
 

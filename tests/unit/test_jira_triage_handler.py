@@ -15,23 +15,23 @@ from typing import Any
 import aiosqlite
 import pytest
 
-from daeyeon_bot.app.config import JiraTriageHandlerEntry, LokiConfig
-from daeyeon_bot.core.errors import PermanentError
-from daeyeon_bot.core.events import Event, make_event
-from daeyeon_bot.core.jira_triage.types import LokiSlice, RunSnapshot
-from daeyeon_bot.core.results import Ack
-from daeyeon_bot.handlers import jira_triage as _jt_module
-from daeyeon_bot.handlers.jira_triage import (
+from hyejin_bot.app.config import JiraTriageHandlerEntry, LokiConfig
+from hyejin_bot.core.errors import PermanentError
+from hyejin_bot.core.events import Event, make_event
+from hyejin_bot.core.jira_triage.types import LokiSlice, RunSnapshot
+from hyejin_bot.core.results import Ack
+from hyejin_bot.handlers import jira_triage as _jt_module
+from hyejin_bot.handlers.jira_triage import (
     MANIFEST,
     JiraTriageHandler,
 )
-from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
-from daeyeon_bot.infra.host_resolver import HostResolver
-from daeyeon_bot.infra.jira_client import FieldDiscovery, JiraIdentity
-from daeyeon_bot.infra.jira_triage_audit import find_latest
-from daeyeon_bot.infra.persona_loader import PersonaLoader
-from daeyeon_bot.infra.ssw_bundle import SswBundleClient
-from daeyeon_bot.infra.storage import apply_migrations, open_db
+from hyejin_bot.infra.claude import FakeClaudeSession, FakeFactory
+from hyejin_bot.infra.host_resolver import HostResolver
+from hyejin_bot.infra.jira_client import FieldDiscovery, JiraIdentity
+from hyejin_bot.infra.jira_triage_audit import find_latest
+from hyejin_bot.infra.persona_loader import PersonaLoader
+from hyejin_bot.infra.ssw_bundle import SswBundleClient
+from hyejin_bot.infra.storage import apply_migrations, open_db
 from tests.fakes.jira_client import FakeJiraClient
 from tests.fakes.loki import FakeLokiClient
 from tests.fakes.ssh_logs import FakeSshLogClient
@@ -79,7 +79,7 @@ def _make_handler(
 ) -> JiraTriageHandler:
     cfg = config or JiraTriageHandlerEntry(
         allowed_projects=["SSWCI"],
-        persona_skill="daeyeon-bot-jira-triage",
+        persona_skill="hyejin-bot-jira-triage",
         timeout_seconds=600,
     )
     persona_loader = PersonaLoader(skills_root=persona_root or _bundled_persona_root())
@@ -96,8 +96,8 @@ def _make_handler(
         db=db,
         jira_identity=JiraIdentity(
             account_id="557058:fake",
-            email_address="daeyeon.lee@rebellions.ai",
-            display_name="daeyeon",
+            email_address="hyejin.han@rebellions.ai",
+            display_name="hyejin",
         ),
         field_discovery=FieldDiscovery(
             branch_field_id="customfield_10042",
@@ -268,7 +268,7 @@ async def test_disallowed_project_audit_skipped(tmp_path: Path) -> None:
 
 def test_parse_epic_description_extracts_branch_and_commit() -> None:
     """SSWCI Epics put branch/commit in description wiki markup, not custom fields."""
-    from daeyeon_bot.handlers import jira_triage as _jt
+    from hyejin_bot.handlers import jira_triage as _jt
 
     _parse_epic_description = _jt._parse_epic_description  # pyright: ignore[reportPrivateUsage]
 
@@ -283,7 +283,7 @@ def test_parse_epic_description_extracts_branch_and_commit() -> None:
 
 
 def test_parse_epic_description_handles_missing_fields() -> None:
-    from daeyeon_bot.handlers import jira_triage as _jt
+    from hyejin_bot.handlers import jira_triage as _jt
 
     _parse_epic_description = _jt._parse_epic_description  # pyright: ignore[reportPrivateUsage]
 
@@ -423,7 +423,7 @@ async def test_happy_path_posts_comment_and_audits(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_already_triaged_force_false_skips(tmp_path: Path) -> None:
     """A prior 'posted' audit row + non-force event → skipped_already_triaged."""
-    from daeyeon_bot.infra.jira_triage_audit import insert_audit
+    from hyejin_bot.infra.jira_triage_audit import insert_audit
 
     conn = await _open(tmp_path)
     try:
@@ -488,7 +488,7 @@ async def test_already_triaged_force_false_skips(tmp_path: Path) -> None:
 
 
 def test_verify_evidence_quotes_passes_when_present() -> None:
-    from daeyeon_bot.core.jira_triage.types import (
+    from hyejin_bot.core.jira_triage.types import (
         EpicMeta,
         EvidenceItem,
         RunMeta,
@@ -533,7 +533,7 @@ def test_verify_evidence_quotes_passes_when_present() -> None:
 
 
 def test_verify_evidence_quotes_rejects_fabricated() -> None:
-    from daeyeon_bot.core.jira_triage.types import (
+    from hyejin_bot.core.jira_triage.types import (
         EpicMeta,
         EvidenceItem,
         RunMeta,

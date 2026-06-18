@@ -1,4 +1,4 @@
-# Optimization Plan — daeyeon-bot
+# Optimization Plan — hyejin-bot
 
 > Companion to `docs/PLAN.md` (Phases 0–7 implementation plan). This document
 > is the post-Phase-7 hardening roadmap from a Senior Engineering review of the
@@ -394,7 +394,7 @@ the gh trigger.
 **Where:** `scripts/setup-token.sh` (the actual `just setup-token` target —
 there is no `cli/setup.py` today; the script wraps `keyring set`
 directly) and the operator runbook. Today's flow on rotation: run the
-script → `launchctl kickstart -k gui/$(id -u)/com.rebellions.daeyeon-bot`
+script → `launchctl kickstart -k gui/$(id -u)/com.rebellions.hyejin-bot`
 (or `systemctl restart`). Two manual steps, easy to do one without the
 other and end up with a running daemon on the old token until next
 AuthError.
@@ -538,7 +538,7 @@ Target: `cli/ops.py` to ≥60 %.
 
 ### D2. `doctor` doesn't warn on missing `config.toml`  &nbsp;`risk: low · effort: XS`
 
-**Where:** `cli/ops.py` (the `doctor` subcommand under `daeyeon-bot ops doctor`).
+**Where:** `cli/ops.py` (the `doctor` subcommand under `hyejin-bot ops doctor`).
 When neither `config.toml` nor
 `DAEYEON_BOT_CONFIG` is set, `Config()` falls back to defaults silently.
 A first-time operator gets confusing behavior (e.g., default state_dir
@@ -651,12 +651,12 @@ except Exception as exc:  # pragma: no cover — best-effort teardown
 
 ### E4. `infra/schemas.py` is an empty stub  &nbsp;`risk: cosmetic · effort: XS`
 
-**Where:** `src/daeyeon_bot/infra/schemas.py`. File exists with no
+**Where:** `src/hyejin_bot/infra/schemas.py`. File exists with no
 contents (Phase 0 placeholder for event schema validation that landed
 elsewhere in `core/events.py` and `handlers/pr_review_schemas.py`).
 
 **Fix:** Delete the file. Update any import scan in `tests/` to confirm
-no stale `from daeyeon_bot.infra import schemas` exists.
+no stale `from hyejin_bot.infra import schemas` exists.
 
 ---
 

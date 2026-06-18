@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.lock import AlreadyRunningError, PidLock
+from hyejin_bot.app.lock import AlreadyRunningError, PidLock
 
 
 def test_acquire_writes_pid(tmp_path: Path) -> None:
@@ -45,7 +45,7 @@ def test_second_holder_in_separate_process_fails_fast(tmp_path: Path) -> None:
         f"""
         import time
         from pathlib import Path
-        from daeyeon_bot.app.lock import PidLock
+        from hyejin_bot.app.lock import PidLock
         lock = PidLock(path=Path({str(pidfile)!r}))
         lock.acquire()
         Path({str(ready)!r}).write_text("ok")

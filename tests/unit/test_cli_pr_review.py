@@ -13,8 +13,8 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from daeyeon_bot.cli import dev as dev_cli
-from daeyeon_bot.cli.dev import (
+from hyejin_bot.cli import dev as dev_cli
+from hyejin_bot.cli.dev import (
     _parse_pr_ref,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -22,7 +22,7 @@ from daeyeon_bot.cli.dev import (
 
 
 def test_parse_short_form() -> None:
-    assert _parse_pr_ref("rebellions-sw/daeyeon-bot#42") == ("rebellions-sw/daeyeon-bot", 42)
+    assert _parse_pr_ref("rebellions-sw/hyejin-bot#42") == ("rebellions-sw/hyejin-bot", 42)
 
 
 def test_parse_url_form() -> None:
@@ -62,7 +62,7 @@ def _write_config(tmp_path: Path, *, with_routing: bool) -> Path:
     state_dir.mkdir(parents=True, exist_ok=True)
     body = (
         f'[runtime]\nstate_dir = "{state_dir}"\n\n'
-        '[github]\nusername = "daeyeon-lee"\n\n'
+        '[github]\nusername = "hyejin-lee"\n\n'
         '[handlers.pr_review]\npersona_skill = "pr-reviewer"\n\n'
     )
     if with_routing:
@@ -179,7 +179,7 @@ def test_happy_path_writes_event_and_outbox_row(
     # Verify the event + outbox rows landed.
     import asyncio
 
-    from daeyeon_bot.infra import storage
+    from hyejin_bot.infra import storage
 
     async def _check() -> tuple[str, str, str]:
         async with storage.connection(tmp_path / "state" / "state.db") as conn:

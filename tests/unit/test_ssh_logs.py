@@ -15,7 +15,7 @@ from typing import Any
 import asyncssh
 import pytest
 
-from daeyeon_bot.infra.ssh_logs import SshLogClient
+from hyejin_bot.infra.ssh_logs import SshLogClient
 
 # ── Fake asyncssh harness ────────────────────────────────────────────────────
 

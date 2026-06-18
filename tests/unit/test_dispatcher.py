@@ -9,15 +9,15 @@ from pathlib import Path
 import aiosqlite
 import pytest
 
-from daeyeon_bot.app.config import Config, HandlerEntry
-from daeyeon_bot.app.dispatcher import MAX_TRANSIENT_ATTEMPTS, Dispatcher
-from daeyeon_bot.app.registry import build_handler_registry
-from daeyeon_bot.core.errors import TransientError
-from daeyeon_bot.core.events import Event, make_event
-from daeyeon_bot.core.protocols import HandlerContext
-from daeyeon_bot.core.results import HandlerResult
-from daeyeon_bot.infra import outbox, storage
-from daeyeon_bot.infra.claude import FakeClaudeSession
+from hyejin_bot.app.config import Config, HandlerEntry
+from hyejin_bot.app.dispatcher import MAX_TRANSIENT_ATTEMPTS, Dispatcher
+from hyejin_bot.app.registry import build_handler_registry
+from hyejin_bot.core.errors import TransientError
+from hyejin_bot.core.events import Event, make_event
+from hyejin_bot.core.protocols import HandlerContext
+from hyejin_bot.core.results import HandlerResult
+from hyejin_bot.infra import outbox, storage
+from hyejin_bot.infra.claude import FakeClaudeSession
 
 
 @pytest.fixture

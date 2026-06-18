@@ -6,7 +6,7 @@
 ## Summary
 
 When an SSWCI regression-failure ticket (titled `regression-test . <hostname>
-. <TC-NNNN-...>`) is **assigned to daeyeon or to the DevOps Team**, the bot
+. <TC-NNNN-...>`) is **assigned to hyejin or to the DevOps Team**, the bot
 polls and detects the assignment transition, walks up to the parent Epic to
 get `branch + commit`, reproduces the ssw-bundle state at that commit in a
 project-local clone, queries Loki for the run's log streams
@@ -37,7 +37,7 @@ source_dedup_key)` UNIQUE on `events` carries the deterministic dedup token
 **Storage**: SQLite WAL (existing `state.db`). One additive migration: `005_jira_triage_state.sql` (002 already taken by GitHub PR-review state, 003/004 already shipped).
 **Testing**: pytest (`pytest-asyncio` mode=auto), pytest-cov; integration tests use real `aiosqlite` against `tmp_path` DBs, real git operations against a fixture super-repo + submodule, fakes for Jira/Loki/SSH/Claude.
 **Target Platform**: macOS (launchd) + Linux (systemd) — same artifact, same code paths. `git` and `ssh` CLIs must be on `PATH` (already true on all SSW dev machines).
-**Project Type**: single-process daemon (existing `src/daeyeon_bot/`), not split.
+**Project Type**: single-process daemon (existing `src/hyejin_bot/`), not split.
 **Performance Goals**: SC-001 (manual: 95% under 10 min) + SC-002 (auto: 95% under 15 min). Polling cadence 5 min ⇒ p50 detection ~2.5 min, p95 ~5 min. Per-event handler wall-clock budgeted at 600 s; dispatcher already polls outbox every ~200 ms.
 **Constraints**: One triage = up to ~1 GB transient disk churn during ssw-bundle submodule checkout (mitigated by partial clone + reuse). Loki rate-limit is unbounded for one-operator traffic. Jira REST budget is 100 req/min per user (generous for ~1 ticket/5 min). SSH connection time ~1–2 s per host (negligible). Boot adds one Jira `GET /myself` probe (~200 ms) when triggers/handlers are enabled.
 **Scale/Scope**: One operator. ~1–10 new SSWCI regression-failure tickets per day in steady state; long-tail spikes during release-branch instability. Concurrency=1 means events queue; budget-cap ensures no one event blocks the queue indefinitely.
@@ -94,7 +94,7 @@ specs/002-jira-triage-bot/
 Existing layout (unchanged dirs abbreviated). New files marked **NEW**.
 
 ```text
-src/daeyeon_bot/
+src/hyejin_bot/
 ├── core/                                    # pure domain — stdlib only
 │   ├── events.py                            # (existing)
 │   ├── manifest.py                          # (existing)
@@ -150,7 +150,7 @@ config.example.toml                          # MODIFIED: add [jira], [loki], [tr
 pyproject.toml                               # MODIFIED: add httpx, asyncssh
 .gitignore                                   # MODIFIED: add var/
 
-.claude/skills/daeyeon-bot-jira-triage/SKILL.md  # NEW: bundled default persona
+.claude/skills/hyejin-bot-jira-triage/SKILL.md  # NEW: bundled default persona
 
 var/                                         # NEW dir (gitignored)
 └── ssw-bundle/                              # auto-managed by infra/ssw_bundle.py

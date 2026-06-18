@@ -21,8 +21,8 @@ from claude_agent_sdk import (
     TextBlock,
 )
 
-from daeyeon_bot.core.errors import AuthError, RateLimitError, TransientError
-from daeyeon_bot.infra import claude as claude_mod
+from hyejin_bot.core.errors import AuthError, RateLimitError, TransientError
+from hyejin_bot.infra import claude as claude_mod
 
 
 @dataclass

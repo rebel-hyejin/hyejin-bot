@@ -22,14 +22,14 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.config import load
-from daeyeon_bot.app.container import ContainerOverrides
-from daeyeon_bot.app.lifecycle import BootOptions, boot
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.infra import outbox, storage
-from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
-from daeyeon_bot.infra.jira_client import FieldDiscovery, JiraIdentity
-from daeyeon_bot.infra.persona_loader import PersonaLoader
+from hyejin_bot.app.config import load
+from hyejin_bot.app.container import ContainerOverrides
+from hyejin_bot.app.lifecycle import BootOptions, boot
+from hyejin_bot.core.events import make_event
+from hyejin_bot.infra import outbox, storage
+from hyejin_bot.infra.claude import FakeClaudeSession, FakeFactory
+from hyejin_bot.infra.jira_client import FieldDiscovery, JiraIdentity
+from hyejin_bot.infra.persona_loader import PersonaLoader
 from tests.fakes.jira_client import FakeJiraClient
 from tests.fakes.loki import FakeLokiClient
 from tests.fakes.ssh_logs import FakeSshLogClient
@@ -83,7 +83,7 @@ enabled = false
 [handlers.jira_triage]
 enabled = true
 allowed_projects = ["SSWCI"]
-persona_skill = "daeyeon-bot-jira-triage"
+persona_skill = "hyejin-bot-jira-triage"
 min_persona_chars = 200
 timeout_seconds = 60
 ssw_bundle_path = {str(tmp_path / "var" / "ssw-bundle")!r}
@@ -141,7 +141,7 @@ allow_external_ssw_bundle = true
     factory = FakeFactory(session=fake_session)
 
     # Replace ssw-bundle client with one pointing at the fixture remote.
-    from daeyeon_bot.infra.ssw_bundle import SswBundleClient
+    from hyejin_bot.infra.ssw_bundle import SswBundleClient
 
     ssw = SswBundleClient(
         clone_path=tmp_path / "var" / "ssw-bundle",
@@ -160,8 +160,8 @@ allow_external_ssw_bundle = true
         persona_loader=persona_loader,
         jira_identity=JiraIdentity(
             account_id="557058:fake",
-            email_address="daeyeon.lee@rebellions.ai",
-            display_name="daeyeon",
+            email_address="hyejin.han@rebellions.ai",
+            display_name="hyejin",
         ),
         field_discovery=FieldDiscovery(
             branch_field_id="customfield_10042",
@@ -247,4 +247,4 @@ allow_external_ssw_bundle = true
     assert audit["status"] == "posted"
     assert audit["comment_id"] is not None
     assert audit["domain"] == "CpFw"
-    assert audit["persona_skill"] == "daeyeon-bot-jira-triage"
+    assert audit["persona_skill"] == "hyejin-bot-jira-triage"

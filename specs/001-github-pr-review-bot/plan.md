@@ -29,7 +29,7 @@ token `sha256("gh-review-requested|{repo}#{pr}@{sha}#{gen}")`.
 **Storage**: SQLite WAL (existing `state.db`). One additive migration: `002_gh_review_requested_state.sql`.
 **Testing**: pytest (`pytest-asyncio` mode=auto), pytest-cov; integration tests use real `aiosqlite` against `tmp_path` DBs and fakes for `gh`/Claude.
 **Target Platform**: macOS (launchd) + Linux (systemd) — same artifact, same code paths.
-**Project Type**: single-process daemon (existing `src/daeyeon_bot/`), not split.
+**Project Type**: single-process daemon (existing `src/hyejin_bot/`), not split.
 **Performance Goals**: SC-001 (manual: 95% under 5 min) + SC-002 (auto: 95% under 10 min). Polling cadence 5 min ⇒ p50 detection ~2.5 min, p95 ~5 min. Dispatcher already polls outbox every ~200 ms.
 **Constraints**: Size budget = 1000 changed lines OR 50 changed files (config-overridable). `gh` REST budget ≈ 5000 req/hr per user, well above per-poll cost (1 search + 0..N PRs × ~3 endpoints). Boot adds ≤200 ms (one `gh auth status` probe). No new persistent secret.
 **Scale/Scope**: One operator. Up to ~20 simultaneous review-requested PRs in steady state; long-tail only when on-call rotation.
@@ -81,7 +81,7 @@ specs/001-github-pr-review-bot/
 Existing layout (unchanged dirs are abbreviated). New files marked **NEW**.
 
 ```text
-src/daeyeon_bot/
+src/hyejin_bot/
 ├── core/                                    # pure domain — stdlib only
 │   ├── events.py                            # (existing) Event dataclass
 │   ├── manifest.py                          # (existing)

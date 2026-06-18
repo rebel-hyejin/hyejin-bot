@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from structlog.testing import capture_logs
 
-from daeyeon_bot.app import heartbeat
+from hyejin_bot.app import heartbeat
 
 
 def test_staleness_seconds_returns_none_when_missing(tmp_path: Path) -> None:

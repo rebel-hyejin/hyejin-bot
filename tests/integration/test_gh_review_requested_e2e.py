@@ -23,12 +23,12 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.config import load
-from daeyeon_bot.app.container import ContainerOverrides
-from daeyeon_bot.app.lifecycle import BootOptions, boot
-from daeyeon_bot.infra import storage
-from daeyeon_bot.infra.claude import FakeClaudeSession, FakeFactory
-from daeyeon_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.app.config import load
+from hyejin_bot.app.container import ContainerOverrides
+from hyejin_bot.app.lifecycle import BootOptions, boot
+from hyejin_bot.infra import storage
+from hyejin_bot.infra.claude import FakeClaudeSession, FakeFactory
+from hyejin_bot.infra.pr_review_persona import PersonaLoader
 from tests.fakes.gh_cli import FakeGh
 from tests.fakes.pr_persona import materialize_persona
 
@@ -91,7 +91,7 @@ level = "WARNING"
 format = "console"
 
 [github]
-username = "daeyeon-lee"
+username = "hyejin-lee"
 
 [triggers.gh_review_requested]
 enabled = true
@@ -133,13 +133,13 @@ async def test_auto_trigger_posts_review_then_supersedes_on_re_request(
     repo = "octo/cat"
     pr_number = 7
 
-    fake_gh = FakeGh(user_login="daeyeon-lee")
+    fake_gh = FakeGh(user_login="hyejin-lee")
     fake_gh.add_pr(
         repo,
         pr_number,
         head_sha=head_sha,
         author="alice",
-        requested=("daeyeon-lee",),
+        requested=("hyejin-lee",),
         files=[{"filename": "lib/foo.py", "patch": _PATCH_HUNK, "changes": 4}],
         in_search_set=True,
     )
@@ -151,7 +151,7 @@ async def test_auto_trigger_posts_review_then_supersedes_on_re_request(
         claude_session_factory=factory,
         gh=fake_gh,
         persona_loader=persona_loader,
-        github_username="daeyeon-lee",
+        github_username="hyejin-lee",
     )
     stop = asyncio.Event()
     boot_task = asyncio.create_task(

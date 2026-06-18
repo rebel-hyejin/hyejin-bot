@@ -20,7 +20,7 @@ and `JIRA_USER` matches the returned `emailAddress` (raises `AuthError`
 **Rationale**:
 - Spec FR-020 nailed this. The operator already generates API tokens for
   other tooling; reusing the same `JIRA_USER` + `JIRA_API_TOKEN` workflow
-  eliminates a new login UX AND keeps the daeyeon-bot daemon's auth
+  eliminates a new login UX AND keeps the hyejin-bot daemon's auth
   shape consistent with `ssw-bundle/inv/test_report/jira_client.py`
   (which uses `JIRA(options={"server": server}, basic_auth=(user,
   token))`). One token rotation step covers both tools.
@@ -59,7 +59,7 @@ GET /rest/api/3/search?jql=(assignee = currentUser() OR "Team" = "{team_name}")
                        &maxResults=50
 ```
 
-The result is a **set** of issue keys currently in daeyeon's (or
+The result is a **set** of issue keys currently in hyejin's (or
 DevOps's) watched queue. The trigger reconciles this against
 `jira_assigned_state` to detect transitions (mirrors the
 `gh_review_requested` flow):
@@ -80,12 +80,12 @@ DevOps's) watched queue. The trigger reconciles this against
   hits `events.UNIQUE(source, source_dedup_key)` and no-ops.
 
 **Rationale for assignment-trigger vs. `created >=` time-window trigger**:
-- daeyeon explicitly chose this (clarification 2026-05-13): the bot
+- hyejin explicitly chose this (clarification 2026-05-13): the bot
   should only triage tickets that actually entered his queue, not every
   new ticket that exists. Assignment is the signal of "needs attention".
 - The team-level expansion (`OR "Team" = "DevOps"`) covers tickets that
   are assigned to the team rather than to a specific human — those are
-  exactly the tickets daeyeon would manually pick up on rotation.
+  exactly the tickets hyejin would manually pick up on rotation.
 - The state-table model (`in_pending_set` + `assignment_gen`) is a
   direct mirror of `gh_review_requested_state`. Reusing the same shape
   means operators learn one pattern, not two.
@@ -242,8 +242,8 @@ ever grows beyond a configurable cap, operator manually deletes
 **Decision**: **Generalize**. Refactor `infra/pr_review_persona.py` →
 `infra/persona_loader.py` with a `PersonaLoader` class that takes the
 skill name as constructor arg. `pr_review` keeps using it with
-`name="daeyeon-bot-code-review"`; `jira_triage` instantiates a second one
-with `name="daeyeon-bot-jira-triage"`. The `Persona` dataclass moves from
+`name="hyejin-bot-code-review"`; `jira_triage` instantiates a second one
+with `name="hyejin-bot-jira-triage"`. The `Persona` dataclass moves from
 `core/pr_review/persona.py` → `core/persona.py`.
 
 **Rationale**:
@@ -592,7 +592,7 @@ the handler ships:
   documented format).
 
 No external metrics export in v1. Operators inspect via
-`daeyeon-bot inspect status` + new `daeyeon-bot inspect jira-triage --issue
+`hyejin-bot inspect status` + new `hyejin-bot inspect jira-triage --issue
 <key>` sub-command (mirrors `inspect pr-review`).
 
 **Rationale**:
@@ -677,7 +677,7 @@ single-pass like this persona and would just duplicate work.
 
 **Why triage over short-triage for Stage 2**: An earlier draft of this
 research recommended `short-triage` for "unattended automation =
-single-pass" reasoning. daeyeon overruled (2026-05-13): regression
+single-pass" reasoning. hyejin overruled (2026-05-13): regression
 failures in this project regularly span KMD + FW + SMC, and the deeper
 multi-expert pass is worth the wall-clock + token cost. The 600 s
 handler budget (FR-031) covers Stage 1 comfortably; PR-4 (the spec
@@ -700,14 +700,14 @@ invoked.
 
 ## R17. Repo-bundled persona default
 
-**Decision**: Ship `daeyeon-bot/.claude/skills/daeyeon-bot-jira-triage/SKILL.md`
+**Decision**: Ship `hyejin-bot/.claude/skills/hyejin-bot-jira-triage/SKILL.md`
 with the repo. PersonaLoader checks `~/.claude/skills/<name>/SKILL.md`
 first; falls back to `<project_root>/.claude/skills/<name>/SKILL.md`.
 
 **Rationale**:
 - Operator can override locally if they tune the persona. The repo
   carries a stable default so a fresh checkout works out of the box.
-- Same pattern as `daeyeon-bot-code-review` for pr_review.
+- Same pattern as `hyejin-bot-code-review` for pr_review.
 
 **Validation**: The bundled SKILL.md is part of the CI lint set — pyright
 + a small test that asserts it parses (frontmatter + non-empty body) and

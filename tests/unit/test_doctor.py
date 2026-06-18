@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from daeyeon_bot.app.config import (
+from hyejin_bot.app.config import (
     Config,
     HandlerEntry,
     LoggingSection,
@@ -15,9 +15,9 @@ from daeyeon_bot.app.config import (
     RuntimeSection,
     SecretsSection,
 )
-from daeyeon_bot.app.doctor import CheckResult, DoctorReport, run_checks
-from daeyeon_bot.core.errors import AuthError
-from daeyeon_bot.infra import secrets, storage
+from hyejin_bot.app.doctor import CheckResult, DoctorReport, run_checks
+from hyejin_bot.core.errors import AuthError
+from hyejin_bot.infra import secrets, storage
 
 
 def _config(state_dir: Path) -> Config:

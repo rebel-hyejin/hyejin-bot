@@ -10,14 +10,14 @@ from types import TracebackType
 
 import pytest
 
-from daeyeon_bot.app import replay as replay_mod
-from daeyeon_bot.app.config import load
-from daeyeon_bot.app.container import ContainerOverrides
-from daeyeon_bot.app.lifecycle import BootOptions, boot
-from daeyeon_bot.core.errors import PermanentError
-from daeyeon_bot.core.events import make_event
-from daeyeon_bot.infra import outbox, storage
-from daeyeon_bot.infra.claude import FakeClaudeSession
+from hyejin_bot.app import replay as replay_mod
+from hyejin_bot.app.config import load
+from hyejin_bot.app.container import ContainerOverrides
+from hyejin_bot.app.lifecycle import BootOptions, boot
+from hyejin_bot.core.errors import PermanentError
+from hyejin_bot.core.events import make_event
+from hyejin_bot.infra import outbox, storage
+from hyejin_bot.infra.claude import FakeClaudeSession
 
 pytestmark = pytest.mark.integration
 

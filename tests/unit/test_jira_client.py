@@ -7,20 +7,20 @@ import json
 import httpx
 import pytest
 
-from daeyeon_bot.core.errors import (
+from hyejin_bot.core.errors import (
     AuthError,
     PermanentError,
     RateLimitError,
     TransientError,
 )
-from daeyeon_bot.infra.jira_client import JiraClient
+from hyejin_bot.infra.jira_client import JiraClient
 
 
 def _client(handler: httpx.MockTransport) -> JiraClient:
     transport_client = httpx.AsyncClient(transport=handler)
     return JiraClient(
         base_url="https://rbln.atlassian.net/",
-        user="daeyeon.lee@rebellions.ai",
+        user="hyejin.han@rebellions.ai",
         token="atok-xyz",
         timeout_s=5.0,
         http=transport_client,
@@ -101,14 +101,14 @@ async def test_400_on_post_comment_raises_permanent() -> None:
 async def test_myself_parses_identity() -> None:
     payload = {
         "accountId": "557058:abcdef",
-        "emailAddress": "daeyeon.lee@rebellions.ai",
-        "displayName": "daeyeon",
+        "emailAddress": "hyejin.han@rebellions.ai",
+        "displayName": "hyejin",
     }
     transport = httpx.MockTransport(lambda req: httpx.Response(200, json=payload))
     client = _client(transport)
     ident = await client.myself()
     assert ident.account_id == "557058:abcdef"
-    assert ident.email_address == "daeyeon.lee@rebellions.ai"
+    assert ident.email_address == "hyejin.han@rebellions.ai"
 
 
 @pytest.mark.asyncio

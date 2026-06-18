@@ -1,7 +1,7 @@
 # Operations Runbook
 
-Single-operator daemon (`daeyeon-bot`). State directory defaults to
-`~/.daeyeon-bot/`. Read `docs/PLAN.md` for design and `CONTRACTS.md` for
+Single-operator daemon (`hyejin-bot`). State directory defaults to
+`~/.hyejin-bot/`. Read `docs/PLAN.md` for design and `CONTRACTS.md` for
 delivery semantics.
 
 The first half is **routine ops**; the second half is **incident playbooks**.
@@ -13,16 +13,16 @@ Every command assumes the operator's shell on the host running the daemon.
 
 ### Health check
 ```bash
-just doctor                  # daeyeon-bot ops doctor
-just status                  # daeyeon-bot inspect status
+just doctor                  # hyejin-bot ops doctor
+just status                  # hyejin-bot inspect status
 ```
 `ops doctor` exits non-zero if any check is `fail`. Status shows pidfile
 owner, heartbeat age, outbox depth, and PAUSE flag.
 
 ### Pause / resume
 ```bash
-touch ~/.daeyeon-bot/PAUSE   # blocks new Claude calls; in-flight finishes
-rm   ~/.daeyeon-bot/PAUSE
+touch ~/.hyejin-bot/PAUSE   # blocks new Claude calls; in-flight finishes
+rm   ~/.hyejin-bot/PAUSE
 ```
 
 ### Apply schema migrations
@@ -34,7 +34,7 @@ just migrate                 # idempotent; safe to run on a live host
 ```bash
 just backup                  # Connection.backup() → state-<UTC>.db, 0600
 ```
-Snapshots land under `~/.daeyeon-bot/backups/` and are pruned to
+Snapshots land under `~/.hyejin-bot/backups/` and are pruned to
 `retention.backup_keep` (config default: 5). Safe while the daemon runs.
 
 ### Apply retention
@@ -46,13 +46,13 @@ are all settled. Active outbox traffic is never touched.
 
 ### Replay a dead-lettered event
 ```bash
-daeyeon-bot ops replay <event_id>             # dry-run
-daeyeon-bot ops replay <event_id> --confirm   # bumps attempt_epoch
+hyejin-bot ops replay <event_id>             # dry-run
+hyejin-bot ops replay <event_id> --confirm   # bumps attempt_epoch
 ```
 
 ### Inspect rate-limit state
 ```bash
-daeyeon-bot inspect ratelimit                 # token-bucket snapshot
+hyejin-bot inspect ratelimit                 # token-bucket snapshot
 ```
 Shows each bucket's `tokens / capacity / refill_per_sec / last_refill`.
 The dispatcher decrements `claude_call` (seeded by migration 003) before
@@ -67,14 +67,14 @@ outpacing refill — bump `[ratelimit].claude_call_refill_per_sec` in
 | Concern              | macOS (launchd)                                   | Linux (systemd --user)                          |
 |----------------------|---------------------------------------------------|-------------------------------------------------|
 | Install              | `just install-mac`                                | `just install-linux <oauth-credential-file>`    |
-| Unit / plist         | `~/Library/LaunchAgents/ai.rebellions.daeyeon-bot.plist` | `~/.config/systemd/user/daeyeon-bot.service` |
+| Unit / plist         | `~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist` | `~/.config/systemd/user/hyejin-bot.service` |
 | Auto-restart         | `KeepAlive=true`, `ThrottleInterval=10`           | `Restart=on-failure`, `RestartSec=10`           |
 | Stop on AuthError    | `RestartPreventExitStatus=78` (via wrapper)       | `RestartPreventExitStatus=78`                   |
 | Watchdog             | `ops doctor` cron / heartbeat self-alert log      | `WatchdogSec=120` + sd_notify                   |
 | Token storage        | macOS Keychain (`security add-generic-password`)  | `0600` file under `~/.config/`, `LoadCredential=` |
-| Logs                 | `StandardOutPath` / `StandardErrorPath` files     | `journalctl --user -u daeyeon-bot`              |
+| Logs                 | `StandardOutPath` / `StandardErrorPath` files     | `journalctl --user -u hyejin-bot`              |
 | Bootstrap token      | `just setup-token` (Keychain prompt)              | Manual: write file with `umask 077`             |
-| Manual restart       | `launchctl kickstart -k gui/<uid>/ai.rebellions.daeyeon-bot` | `systemctl --user restart daeyeon-bot`  |
+| Manual restart       | `launchctl kickstart -k gui/<uid>/ai.rebellions.hyejin-bot` | `systemctl --user restart hyejin-bot`  |
 
 Exit codes that matter:
 - **75 (`EX_TEMPFAIL`)** — another instance already holds the pidfile lock.
@@ -97,13 +97,13 @@ Exit codes that matter:
 1. **Stop the daemon.**
    ```bash
    # macOS
-   launchctl unload ~/Library/LaunchAgents/ai.rebellions.daeyeon-bot.plist
+   launchctl unload ~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist
    # Linux
-   systemctl --user stop daeyeon-bot
+   systemctl --user stop hyejin-bot
    ```
 2. **Move the bad DB aside** (do **not** delete; we may dump rows from it).
    ```bash
-   cd ~/.daeyeon-bot
+   cd ~/.hyejin-bot
    mv state.db state.db.corrupt-$(date -u +%Y%m%dT%H%M%SZ)
    mv state.db-wal state.db-wal.corrupt 2>/dev/null
    mv state.db-shm state.db-shm.corrupt 2>/dev/null
@@ -123,15 +123,15 @@ Exit codes that matter:
 5. **Restart the daemon and verify.**
    ```bash
    # macOS
-   launchctl load -w ~/Library/LaunchAgents/ai.rebellions.daeyeon-bot.plist
+   launchctl load -w ~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist
    # Linux
-   systemctl --user start daeyeon-bot
+   systemctl --user start hyejin-bot
    just status
    ```
 6. **Salvage what the backup missed.**
    Use `sqlite3 state.db.corrupt-<stamp> '.recover'` (or `.dump`) to extract
    any rows newer than the backup; manually re-emit important events with
-   `daeyeon-bot ops replay <event_id> --confirm`.
+   `hyejin-bot ops replay <event_id> --confirm`.
 
 **Postmortem checklist**
 - [ ] Disk SMART status (`smartctl -a`) — corruption often = failing media.
@@ -176,21 +176,21 @@ Exit codes that matter:
      installer so systemd's `LoadCredential=` picks it up.
      ```bash
      umask 077
-     printf '%s' "<token>" > ~/.config/daeyeon-bot/oauth_token
-     just install-linux ~/.config/daeyeon-bot/oauth_token
+     printf '%s' "<token>" > ~/.config/hyejin-bot/oauth_token
+     just install-linux ~/.config/hyejin-bot/oauth_token
      ```
 4. **Verify and restart.**
    ```bash
    just doctor                          # token: ok, len>0
    # macOS — only if you used `just setup-token` (not `just rotate-token`).
-   launchctl kickstart -k gui/$(id -u)/ai.rebellions.daeyeon-bot
+   launchctl kickstart -k gui/$(id -u)/ai.rebellions.hyejin-bot
    # Linux
-   systemctl --user restart daeyeon-bot
+   systemctl --user restart hyejin-bot
    just status
    ```
 5. **Confirm the daemon makes a real Claude call.**
    ```bash
-   daeyeon-bot dev fire manual -m 'hello-world'  # or your smoke trigger
+   hyejin-bot dev fire manual -m 'hello-world'  # or your smoke trigger
    ```
 
 **Postmortem checklist**
@@ -214,19 +214,19 @@ Exit codes that matter:
 **Recovery**
 1. **Capture state before restarting** so we can debug the stall.
    ```bash
-   ps -p $(cat ~/.daeyeon-bot/daeyeon-bot.pid) -o pid,etime,%cpu,%mem,stat,wchan,comm
+   ps -p $(cat ~/.hyejin-bot/hyejin-bot.pid) -o pid,etime,%cpu,%mem,stat,wchan,comm
    # Linux
-   journalctl --user -u daeyeon-bot --since '15 min ago' > /tmp/db-stall.log
+   journalctl --user -u hyejin-bot --since '15 min ago' > /tmp/db-stall.log
    # macOS
-   tail -n 500 ~/.daeyeon-bot/stderr.log > /tmp/db-stall.log
+   tail -n 500 ~/.hyejin-bot/stderr.log > /tmp/db-stall.log
    ```
 2. **Restart cleanly** (the supervisor will already have done this on Linux
    after the watchdog fired):
    ```bash
    # macOS
-   launchctl kickstart -k gui/$(id -u)/ai.rebellions.daeyeon-bot
+   launchctl kickstart -k gui/$(id -u)/ai.rebellions.hyejin-bot
    # Linux — only if it isn't already running
-   systemctl --user restart daeyeon-bot
+   systemctl --user restart hyejin-bot
    ```
 3. **Confirm recovery picked up `interrupted` rows.** Boot logs include
    `outbox.recovered status=…` lines; `inspect status` outbox depths should
@@ -243,20 +243,20 @@ Exit codes that matter:
 ### 3.4 Pidfile lock conflict (exit 75)
 
 **Symptoms**
-- `daeyeon-bot run` exits with code **75** immediately.
-- `~/.daeyeon-bot/daeyeon-bot.pid` exists and points to a live PID.
+- `hyejin-bot run` exits with code **75** immediately.
+- `~/.hyejin-bot/hyejin-bot.pid` exists and points to a live PID.
 
 **Recovery**
 1. **Check who owns the lock.**
    ```bash
-   pid=$(cat ~/.daeyeon-bot/daeyeon-bot.pid)
+   pid=$(cat ~/.hyejin-bot/hyejin-bot.pid)
    ps -p "$pid" -o pid,user,etime,comm
    ```
 2. If the PID is the actual running daemon — that is the correct behaviour;
    stop trying to launch a second instance.
 3. If the PID is **stale** (process gone, pidfile left behind):
    ```bash
-   rm ~/.daeyeon-bot/daeyeon-bot.pid
+   rm ~/.hyejin-bot/hyejin-bot.pid
    just run
    ```
    `app/lock.py` only removes its own pidfile on graceful shutdown, so a
@@ -276,8 +276,8 @@ Exit codes that matter:
 2. **Run retention** to shrink the DB:
    ```bash
    just prune
-   sqlite3 ~/.daeyeon-bot/state.db 'PRAGMA wal_checkpoint(TRUNCATE);'
-   sqlite3 ~/.daeyeon-bot/state.db 'VACUUM;'    # daemon must be stopped
+   sqlite3 ~/.hyejin-bot/state.db 'PRAGMA wal_checkpoint(TRUNCATE);'
+   sqlite3 ~/.hyejin-bot/state.db 'VACUUM;'    # daemon must be stopped
    ```
 3. **Reduce `retention.backup_keep`** in `config.toml` if backups dominate.
 4. **Restart and verify** with `just doctor` + `just status`.
@@ -291,13 +291,13 @@ when the bot's user is in the PR's `requested_reviewers` set. The trigger
 `gh_review_requested` polls every 5 minutes (default
 `triggers.gh_review_requested.poll_interval_seconds = 300`) and emits
 one event per (re-)request. The persona that drives the prose is the
-operator's persona skill (SKILL.md) — `daeyeon-bot-code-review` by
+operator's persona skill (SKILL.md) — `hyejin-bot-code-review` by
 default; configurable via `[handlers.pr_review].persona_skill`. The
 skill is reloaded from disk on every event by mtime — no daemon
 restart needed when the persona changes.
 
 The feature ships with `[handlers.pr_review].enabled = true` and the
-bundled `daeyeon-bot-code-review` skill lives in the repo at
+bundled `hyejin-bot-code-review` skill lives in the repo at
 `.claude/skills/`, which the loader uses as the default `skills_root`.
 Disable by flipping `enabled = false` if you need the daemon up before
 GitHub auth is wired.
@@ -317,10 +317,10 @@ Then flip `[handlers.pr_review].enabled = true` and restart the daemon.
 
 ```bash
 # Most recent 20 audit rows across all PRs
-daeyeon-bot inspect pr-review
+hyejin-bot inspect pr-review
 
 # A single PR's history (newest first)
-daeyeon-bot inspect pr-review --pr octo/cat#42
+hyejin-bot inspect pr-review --pr octo/cat#42
 ```
 
 Each line shows `submitted_at  repo#N@sha8  status=…  review=<id>
@@ -332,9 +332,9 @@ persona=<skill> [supersedes=[…]] [err=…]`. Statuses you'll see:
 | `skipped_self_authored` | PR author is the bot's own user. Default behaviour. Set `[handlers.pr_review].review_self = true` to review your own PRs instead (see "Review my own PRs" below). |
 | `skipped_withdrawn` | `requested_reviewers` no longer includes the bot — request was rescinded. |
 | `skipped_too_large` | PR diff exceeds the 1000-line / 50-file budget. Operator must `--force` or wait for a smaller follow-up. |
-| `skipped_already_reviewed` | An audit row already exists for this `(repo, pr, head_sha)`. Use `daeyeon-bot dev fire-pr-review --pr 'o/r#N' --force` to supersede. |
+| `skipped_already_reviewed` | An audit row already exists for this `(repo, pr, head_sha)`. Use `hyejin-bot dev fire-pr-review --pr 'o/r#N' --force` to supersede. |
 | `skipped_disallowed_repo` | An **auto** (`gh.review_requested`) event whose `owner/name` did not match `[handlers.pr_review].allowed_repos`. Security boundary; `--force` does **not** bypass it on the auto path. A manual `dev fire-pr-review` bypasses the allowlist entirely. Add the glob to the allowlist if you want the poller to pick it up automatically. |
-| `failed` | Handler errored — see `err=…`; for the queue row use `daeyeon-bot inspect status` (counts) or `sqlite3 ~/.daeyeon-bot/state.db "SELECT id,event_id,handler,err FROM outbox WHERE status='dead_letter'"`. |
+| `failed` | Handler errored — see `err=…`; for the queue row use `hyejin-bot inspect status` (counts) or `sqlite3 ~/.hyejin-bot/state.db "SELECT id,event_id,handler,err FROM outbox WHERE status='dead_letter'"`. |
 
 ### Fix a `persona unavailable` DLQ entry
 
@@ -342,7 +342,7 @@ The handler raises `PersonaUnavailable` (→ DeadLetter) when the
 configured persona skill can't be read at handle-time. Recovery:
 
 1. Confirm `<skills_root>/<persona_skill>/SKILL.md` exists and is readable
-   (default: `<repo>/.claude/skills/daeyeon-bot-code-review`; check
+   (default: `<repo>/.claude/skills/hyejin-bot-code-review`; check
    `[handlers.pr_review].persona_skill` and `.skills_root`) by the
    daemon's user (launchd / systemd run as the same operator;
    permissions issues are rare but worth a `ls -l`).
@@ -350,9 +350,9 @@ configured persona skill can't be read at handle-time. Recovery:
    handle).
 3. Replay the dead-lettered row:
    ```bash
-   sqlite3 ~/.daeyeon-bot/state.db \
+   sqlite3 ~/.hyejin-bot/state.db \
      "SELECT event_id,handler FROM outbox WHERE status='dead_letter'"
-   daeyeon-bot ops replay <event_id> --handler pr_review --confirm
+   hyejin-bot ops replay <event_id> --handler pr_review --confirm
    ```
 
 ### Raise the size budget
@@ -363,7 +363,7 @@ override for a one-off review without changing config, fire it manually
 with `--force`:
 
 ```bash
-daeyeon-bot dev fire-pr-review --pr 'o/r#123' --force
+hyejin-bot dev fire-pr-review --pr 'o/r#123' --force
 ```
 
 `--force` also overrides `skipped_already_reviewed` and produces a
@@ -412,7 +412,7 @@ allowed_repos = ["rebellions-sw/*", "octo/cat"]
 ```
 
 Blocked PRs land as `audit.status = skipped_disallowed_repo`. Confirm
-with `daeyeon-bot inspect pr-review --pr 'owner/repo#N'`.
+with `hyejin-bot inspect pr-review --pr 'owner/repo#N'`.
 
 ### Review my own PRs (`review_self`)
 
@@ -485,8 +485,8 @@ new assignments in the configured `[handlers.jira_triage].allowed_projects`
 The handler reproduces the run's source state in a project-local
 ssw-bundle clone (`var/ssw-bundle/`), pulls Loki streams + RF artifacts
 via SSH, then synthesizes a comment via the persona at
-`~/.claude/skills/daeyeon-bot-jira-triage/SKILL.md` (or the repo-bundled
-fallback `.claude/skills/daeyeon-bot-jira-triage/SKILL.md`).
+`~/.claude/skills/hyejin-bot-jira-triage/SKILL.md` (or the repo-bundled
+fallback `.claude/skills/hyejin-bot-jira-triage/SKILL.md`).
 
 ### Enable
 
@@ -495,31 +495,31 @@ fallback `.claude/skills/daeyeon-bot-jira-triage/SKILL.md`).
 # 2. Stash three named secrets via the configured `[secrets].provider`.
 #    Prompts for each value (hidden). Snake-case names — these are the literal
 #    keys the daemon passes to `secrets_provider.load_secret(name)`.
-daeyeon-bot lifecycle setup-secret jira_user            # Atlassian email
-daeyeon-bot lifecycle setup-secret jira_api_token       # API token (ATATT...)
-daeyeon-bot lifecycle setup-secret ssw_automation_password
+hyejin-bot lifecycle setup-secret jira_user            # Atlassian email
+hyejin-bot lifecycle setup-secret jira_api_token       # API token (ATATT...)
+hyejin-bot lifecycle setup-secret ssw_automation_password
 # 3. Flip the config and restart.
-sed -i 's/^enabled = false  *# triggers.jira/enabled = true/' ~/.daeyeon-bot/config.toml
-systemctl --user restart daeyeon-bot
+sed -i 's/^enabled = false  *# triggers.jira/enabled = true/' ~/.hyejin-bot/config.toml
+systemctl --user restart hyejin-bot
 ```
 
 ### Operate
 
 ```bash
 # Audit history (last 20 across all issues):
-daeyeon-bot inspect jira-triage
+hyejin-bot inspect jira-triage
 
 # One issue's history (newest first):
-daeyeon-bot inspect jira-triage --issue SSWCI-16787
+hyejin-bot inspect jira-triage --issue SSWCI-16787
 
 # Manual triage (e.g. for a ticket assigned before the daemon's birth — see
 # FR-004a cold-start guard which suppresses retroactive triage):
-daeyeon-bot dev fire-jira-triage --issue SSWCI-16787
+hyejin-bot dev fire-jira-triage --issue SSWCI-16787
 
 # Force re-triage on an already-triaged ticket. Posts a fresh comment with
 # `{quote}Updated triage (supersedes earlier ...){quote}` header. The
 # prior comment_id moves into `superseded_comment_ids`.
-daeyeon-bot dev fire-jira-triage --issue SSWCI-16787 --force
+hyejin-bot dev fire-jira-triage --issue SSWCI-16787 --force
 ```
 
 ### Incident playbook — `JIRA_API_TOKEN` expired
@@ -528,21 +528,21 @@ daeyeon-bot dev fire-jira-triage --issue SSWCI-16787 --force
 
 - Daemon exits 78 shortly after enabling `jira_triage`, or quickly after
   any `jira` HTTP call.
-- `journalctl --user -u daeyeon-bot` shows an `AuthError` line with
+- `journalctl --user -u hyejin-bot` shows an `AuthError` line with
   `HTTP 401` or `HTTP 403`.
 
 **Diagnose**
 
 ```bash
-daeyeon-bot ops doctor          # token check reports `fail` for JIRA_API_TOKEN
+hyejin-bot ops doctor          # token check reports `fail` for JIRA_API_TOKEN
 ```
 
 **Fix**
 
 1. Generate a fresh token at `https://id.atlassian.com/manage-profile/security/api-tokens`.
-2. Re-run `daeyeon-bot setup-token jira-api-token`.
-3. `systemctl --user restart daeyeon-bot` (or kick launchd on macOS).
-4. Confirm with `daeyeon-bot ops doctor` and tail the log.
+2. Re-run `hyejin-bot setup-token jira-api-token`.
+3. `systemctl --user restart hyejin-bot` (or kick launchd on macOS).
+4. Confirm with `hyejin-bot ops doctor` and tail the log.
 
 ### Long-term: SSH key migration for `SSW_AUTOMATION_PASSWORD`
 
@@ -553,7 +553,7 @@ be replaced.
 
 Migration plan (out of scope for v1, tracked here):
 
-1. Generate `~/.daeyeon-bot/ssh/id_ed25519` (no passphrase or a passphrase
+1. Generate `~/.hyejin-bot/ssh/id_ed25519` (no passphrase or a passphrase
    stored under `SSW_AUTOMATION_KEY_PASSPHRASE`).
 2. Distribute the public key to every test host under `automation`'s
    `~/.ssh/authorized_keys` (typically via the test-host provisioning
@@ -574,15 +574,15 @@ The audit row's `status` column tells you why a triage didn't post:
 | `skipped_unresolvable_commit` | Epic's commit SHA isn't reachable on the ssw-bundle remote (force-pushed, garbage-collected). Fix the Epic or skip. |
 | `skipped_submodule_failure` | `git submodule update --init --recursive` failed for one or more paths (listed in `audit.missing_fields`). Usually network/auth on the submodule's remote. |
 | `skipped_already_triaged` | An audit row with `status='posted'` already exists for this issue. Use `--force` to supersede. |
-| `failed` | Persona unavailable, redaction would alter content, fabricated evidence quote, or any other DeadLetter condition. `audit.error` has details; events go to `dead_letter` for `daeyeon-bot ops replay`. |
+| `failed` | Persona unavailable, redaction would alter content, fabricated evidence quote, or any other DeadLetter condition. `audit.error` has details; events go to `dead_letter` for `hyejin-bot ops replay`. |
 
 ## 5. When in doubt
 
-- `daeyeon-bot ops doctor` is the single best diagnostic.
-- `journalctl --user -u daeyeon-bot -f` (Linux) or `tail -f
-  ~/.daeyeon-bot/stderr.log` (macOS) for live structlog stream.
-- `daeyeon-bot inspect status` for outbox / heartbeat / PAUSE / pidfile.
-- `sqlite3 ~/.daeyeon-bot/state.db "SELECT event_id,handler,err FROM outbox WHERE status='dead_letter'"` to see what needs replay.
+- `hyejin-bot ops doctor` is the single best diagnostic.
+- `journalctl --user -u hyejin-bot -f` (Linux) or `tail -f
+  ~/.hyejin-bot/stderr.log` (macOS) for live structlog stream.
+- `hyejin-bot inspect status` for outbox / heartbeat / PAUSE / pidfile.
+- `sqlite3 ~/.hyejin-bot/state.db "SELECT event_id,handler,err FROM outbox WHERE status='dead_letter'"` to see what needs replay.
 
 This daemon serves one operator on one host. Restart freely; replay
 manually; rotate the token when it leaks. The boring playbook is the

@@ -18,7 +18,7 @@ returned by Jira are ignored.
 Mirrors the convention already in use in
 `ssw-bundle/inv/test_report/jira_client.py`:
 
-- `JIRA_USER` — operator's Atlassian email (e.g. `daeyeon.lee@rebellions.ai`).
+- `JIRA_USER` — operator's Atlassian email (e.g. `hyejin.han@rebellions.ai`).
   Stored under this key in the daemon's secrets provider chain (keychain
   → 0600 file → env w/ `--insecure-env`).
 - `JIRA_API_TOKEN` — token from
@@ -64,8 +64,8 @@ GET /rest/api/3/myself
 ```jsonc
 {
   "accountId": "557058:abcdef0-1234-…",
-  "emailAddress": "daeyeon.lee@rebellions.ai",
-  "displayName": "daeyeon"
+  "emailAddress": "hyejin.han@rebellions.ai",
+  "displayName": "hyejin"
 }
 ```
 
@@ -134,7 +134,7 @@ GET /rest/api/3/search
 ```
 
 The bot's JQL admits tickets via TWO assignment paths:
-- `assignee = currentUser()` — directly assigned to daeyeon (resolved via `/myself` at boot).
+- `assignee = currentUser()` — directly assigned to hyejin (resolved via `/myself` at boot).
 - `"Team" = "DevOps"` — Jira Atlassian Teams field. The exact field
   reference (`"Team"`, `cf[NNNNN]`, or the team's UUID) depends on the
   Jira tenant; see endpoint #2 for boot-time discovery.

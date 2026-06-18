@@ -17,9 +17,9 @@ usage() {
 }
 
 ROTATE=0
-SERVICE="daeyeon-bot"
+SERVICE="hyejin-bot"
 ACCOUNT="oauth_token"
-LABEL="ai.rebellions.daeyeon-bot"
+LABEL="ai.rebellions.hyejin-bot"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

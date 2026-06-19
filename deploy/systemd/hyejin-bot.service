@@ -18,7 +18,8 @@ WorkingDirectory=__INSTALL_PREFIX__
 ExecStart=/usr/bin/env bash -lc 'umask 0077 && exec uv run hyejin-bot run'
 
 # Restart policy. exit 78 (EX_CONFIG, AuthError) is non-recoverable —
-# operator must rotate the token before the unit will start again.
+# operator must rotate the API key (or fix Vault access) before the unit
+# will start again.
 Restart=on-failure
 RestartSec=10
 RestartPreventExitStatus=78
@@ -52,10 +53,11 @@ ProtectHome=read-only
 # State dir — only place the unit can write.
 ReadWritePaths=__STATE_DIR__
 
-# Token via systemd LoadCredential (preferred over env). The unit loads a
-# 0600 file from the credential store; the daemon reads it through
-# secrets.provider='file' with file_path=$CREDENTIALS_DIRECTORY/oauth_token.
-LoadCredential=oauth_token:__CREDENTIAL_PATH__
+# The Anthropic API key (and any named secrets) is fetched from HashiCorp
+# Vault at runtime via secrets.provider='vault' in config.toml. AppRole
+# credentials live as 0600 files under ~/bots/.vault/ (operator bootstrap,
+# NOT touched by this unit). No env injection here; ProtectHome=read-only
+# still allows the daemon to read those files.
 
 [Install]
 WantedBy=default.target

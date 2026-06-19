@@ -3,12 +3,12 @@
 #
 # Usage:  ./scripts/install-mac.sh
 # Re-run safely; the script `unload`s any previous version before loading
-# the new one. The OAuth token is NOT touched here — run
+# the new one. The Anthropic API key is NOT touched here — run
 # `./scripts/setup-token.sh` first.
 set -euo pipefail
 
 PREFIX="$(cd "$(dirname "$0")/.." && pwd)"
-STATE_DIR="${DAEYEON_BOT_STATE_DIR:-$HOME/.hyejin-bot}"
+STATE_DIR="${HYEJIN_BOT_STATE_DIR:-$HOME/.hyejin-bot}"
 LABEL="ai.rebellions.hyejin-bot"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 TARGET="$LAUNCH_AGENTS_DIR/$LABEL.plist"

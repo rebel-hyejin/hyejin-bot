@@ -1,10 +1,25 @@
 #!/usr/bin/env bash
 # Register hyejin-bot as a systemd user unit (no root required).
 #
-# Usage:  ./scripts/install-linux.sh /path/to/oauth_token
-# The credential file must be 0600. systemd copies it into the unit's
-# CREDENTIALS_DIRECTORY at start time so the file path is reproducible
-# across machines.
+# Usage:  ./scripts/install-linux.sh
+#
+# The Anthropic API key (and any named secrets like JIRA_USER, JIRA_API_TOKEN,
+# SSW_AUTOMATION_PASSWORD) is fetched at daemon startup from HashiCorp Vault
+# via secrets.provider='vault' in config.toml. Before running this script:
+#
+#   1. AppRole role_id and secret_id must already live as 0600 files at:
+#        ~/bots/.vault/hyejin-bot.role_id
+#        ~/bots/.vault/hyejin-bot.secret_id
+#      (see docs or scripts/bootstrap-vault-approle.sh)
+#
+#   2. Vault KV v2 path `secret/bots/hyejin-bot` must already hold
+#      ANTHROPIC_API_KEY=sk-ant-...
+#
+#   3. config.toml must exist in the repo root (cp config.example.toml,
+#      tune github.username + allowed_repos).
+#
+# This script does NOT touch any of those — it only writes the unit file
+# and starts the service.
 set -euo pipefail
 
 if [[ "$(uname)" != "Linux" ]]; then
@@ -12,39 +27,41 @@ if [[ "$(uname)" != "Linux" ]]; then
   exit 1
 fi
 
-if [[ $# -lt 1 ]]; then
-  echo "usage: $0 /path/to/oauth_token" >&2
-  exit 64  # EX_USAGE
-fi
-
-CREDENTIAL_PATH="$1"
-if [[ ! -f "$CREDENTIAL_PATH" ]]; then
-  echo "credential file not found: $CREDENTIAL_PATH" >&2
-  exit 66  # EX_NOINPUT
-fi
-
 PREFIX="$(cd "$(dirname "$0")/.." && pwd)"
-STATE_DIR="${DAEYEON_BOT_STATE_DIR:-$HOME/.hyejin-bot}"
+STATE_DIR="${HYEJIN_BOT_STATE_DIR:-$HOME/.hyejin-bot}"
 UNIT_DIR="$HOME/.config/systemd/user"
 UNIT_NAME="hyejin-bot.service"
 TARGET="$UNIT_DIR/$UNIT_NAME"
 TEMPLATE="$PREFIX/deploy/systemd/$UNIT_NAME"
 
+# Refuse to install if the operator skipped Vault bootstrap — the daemon
+# would just AuthError on boot and the unit would loop on exit 78.
+ROLE_ID_FILE="$HOME/bots/.vault/hyejin-bot.role_id"
+SECRET_ID_FILE="$HOME/bots/.vault/hyejin-bot.secret_id"
+for f in "$ROLE_ID_FILE" "$SECRET_ID_FILE"; do
+  if [[ ! -f "$f" ]]; then
+    echo "missing Vault AppRole file: $f" >&2
+    echo "see scripts/bootstrap-vault-approle.sh (or your Vault admin)" >&2
+    exit 66  # EX_NOINPUT
+  fi
+  mode="$(stat -c '%a' "$f")"
+  if [[ "$mode" != "600" ]]; then
+    echo "$f has perms $mode; expected 600 (chmod 600 $f)" >&2
+    exit 78  # EX_CONFIG
+  fi
+done
+
+if [[ ! -f "$PREFIX/config.toml" ]]; then
+  echo "missing $PREFIX/config.toml (cp config.example.toml config.toml)" >&2
+  exit 66
+fi
+
 mkdir -p "$STATE_DIR" "$UNIT_DIR"
 chmod 0700 "$STATE_DIR"
-
-# Refuse to copy a world / group-readable credential — the daemon would
-# refuse to read it anyway via FileSecrets perms enforcement.
-mode="$(stat -c '%a' "$CREDENTIAL_PATH")"
-if [[ "$mode" != "600" ]]; then
-  echo "credential at $CREDENTIAL_PATH has perms $mode; expected 600" >&2
-  exit 78  # EX_CONFIG
-fi
 
 sed \
   -e "s|__INSTALL_PREFIX__|$PREFIX|g" \
   -e "s|__STATE_DIR__|$STATE_DIR|g" \
-  -e "s|__CREDENTIAL_PATH__|$CREDENTIAL_PATH|g" \
   "$TEMPLATE" > "$TARGET"
 
 systemctl --user daemon-reload

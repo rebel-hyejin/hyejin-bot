@@ -88,7 +88,7 @@ async def build(
     config: Config,
     db: aiosqlite.Connection,
     *,
-    oauth_token: str | None = None,
+    claude_api_key: str | None = None,
     secrets_provider: SecretsProvider | None = None,
     overrides: ContainerOverrides | None = None,
 ) -> Container:
@@ -103,7 +103,7 @@ async def build(
     skip it by passing FakeJira via `overrides.jira`.
     """
     overrides = overrides or ContainerOverrides()
-    factory = overrides.claude_session_factory or _build_real_factory(config, oauth_token)
+    factory = overrides.claude_session_factory or _build_real_factory(config, claude_api_key)
 
     pr_review_enabled = _pr_review_enabled(config)
     gh: object | None = None
@@ -145,7 +145,7 @@ async def build(
         clock=clock,
         overrides=overrides,
         persona_loader=persona_loader,
-        oauth_token=oauth_token,
+        claude_api_key=claude_api_key,
         secrets_provider=secrets_provider,
     )
 
@@ -189,7 +189,7 @@ async def _build_jira_deps(  # noqa: PLR0912, PLR0915 — composition root branc
     clock: Clock,
     overrides: ContainerOverrides,
     persona_loader: PersonaLoader | None,
-    oauth_token: str | None,
+    claude_api_key: str | None,
     secrets_provider: SecretsProvider | None = None,
 ) -> tuple[JiraTriageDeps | None, JiraAssignedDeps | None]:
     """Construct the feature-002 deps if the handler/trigger is enabled.
@@ -216,7 +216,7 @@ async def _build_jira_deps(  # noqa: PLR0912, PLR0915 — composition root branc
                 " secrets_provider (production path) OR a jira override"
                 " (test path)"
             )
-        del oauth_token  # not used here — jira has its own (user,token).
+        del claude_api_key  # not used here — jira has its own (user,token).
         user = effective_secrets.load_secret("jira_user")
         token = effective_secrets.load_secret("jira_api_token")
         jira_client = JiraClient(
@@ -381,13 +381,13 @@ def _make_pause_guard(config: Config) -> PauseGuard:
     return _guard
 
 
-def _build_real_factory(config: Config, oauth_token: str | None) -> Callable[[], ClaudeSession]:
-    if oauth_token is None:
+def _build_real_factory(config: Config, claude_api_key: str | None) -> Callable[[], ClaudeSession]:
+    if claude_api_key is None:
         raise RuntimeError(
-            "container.build: oauth_token required when no claude_session_factory override"
+            "container.build: claude_api_key required when no claude_session_factory override"
         )
     return make_real_factory(
-        oauth_token=oauth_token,
+        api_key=claude_api_key,
         model=config.claude.model,
         default_system_prompt=config.claude.default_system_prompt,
     )

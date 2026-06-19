@@ -1,8 +1,8 @@
 # hyejin-bot — example configuration.
 #
 # Copy to `config.toml` (gitignored) and edit. The path can be overridden with
-# DAEYEON_BOT_CONFIG. All keys here are also overridable via env using the
-# `DAEYEON_BOT__SECTION__KEY` pattern (double underscore as section separator).
+# HYEJIN_BOT_CONFIG. All keys here are also overridable via env using the
+# `HYEJIN_BOT__SECTION__KEY` pattern (double underscore as section separator).
 
 [runtime]
 # Where state.db, PAUSE flag, heartbeat file, and *.bak backups live.
@@ -42,15 +42,28 @@ global_per_day = 200
 handler_per_hour = 10
 
 [secrets]
-# Provider for the Claude OAuth token.
+# Provider for the Anthropic API key (and any named secrets).
 #   "keychain" — macOS Keychain (default for Mac).
 #   "file"     — 0600 file at `file_path` (default for Linux server).
-#   "env"      — read CLAUDE_CODE_OAUTH_TOKEN from environment. **DEV ONLY**;
+#   "env"      — read ANTHROPIC_API_KEY from environment. **DEV ONLY**;
 #                daemon requires `--insecure-env` flag to use this.
+#   "vault"    — HashiCorp Vault AppRole + KV v2 (default for VM daemon).
 provider = "keychain"
 keychain_service = "hyejin-bot"
-keychain_account = "oauth_token"
-file_path = "/etc/hyejin-bot/oauth_token"
+keychain_account = "claude_api_key"
+file_path = "/etc/hyejin-bot/claude_api_key"
+
+# Vault knobs — only consulted when provider="vault".
+# AppRole credentials live as 0600 files on disk; the daemon never sees the
+# raw secret_id over env. KV v2 path holds a flat map of UPPER_SNAKE → value
+# (e.g. ANTHROPIC_API_KEY, JIRA_USER, JIRA_API_TOKEN, SSW_AUTOMATION_PASSWORD).
+vault_addr = "https://vault.ssw.rbln.in"
+vault_role_id_path = "~/bots/.vault/hyejin-bot.role_id"
+vault_secret_id_path = "~/bots/.vault/hyejin-bot.secret_id"
+vault_kv_mount = "secret"
+vault_kv_path = "bots/hyejin-bot"
+vault_claude_api_key_field = "ANTHROPIC_API_KEY"
+vault_timeout_seconds = 5.0
 
 [claude]
 model = "claude-opus-4-7"

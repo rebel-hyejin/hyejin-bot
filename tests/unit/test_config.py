@@ -119,7 +119,7 @@ def test_pr_review_skills_root_default_and_override(tmp_path: Path) -> None:
 
 
 def test_pr_review_persona_skill_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """DAEYEON_BOT__GITHUB__USERNAME=alice reaches the github config (env_nested smoke).
+    """HYEJIN_BOT__GITHUB__USERNAME=alice reaches the github config (env_nested smoke).
 
     NOTE: pydantic-settings does not natively materialize nested *dict* entries
     (e.g. handlers["pr_review"]) from env vars; nested-env support is verified
@@ -127,7 +127,7 @@ def test_pr_review_persona_skill_env_override(monkeypatch: pytest.MonkeyPatch) -
     Operators wanting to override `handlers.pr_review.persona_skill` should
     edit the TOML file or use `lifecycle reload-config`.
     """
-    monkeypatch.setenv("DAEYEON_BOT__GITHUB__USERNAME", "alice")
+    monkeypatch.setenv("HYEJIN_BOT__GITHUB__USERNAME", "alice")
     cfg = Config()
     assert cfg.github.username == "alice"
 
@@ -200,8 +200,8 @@ def test_jira_triage_handler_entry_defaults() -> None:
 
 
 def test_jira_triage_handler_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Env override path: DAEYEON_BOT__... percolates into typed entry."""
-    monkeypatch.setenv("DAEYEON_BOT__JIRA__BASE_URL", "https://example.atlassian.net/")
+    """Env override path: HYEJIN_BOT__... percolates into typed entry."""
+    monkeypatch.setenv("HYEJIN_BOT__JIRA__BASE_URL", "https://example.atlassian.net/")
     cfg = Config()
     assert cfg.jira.base_url == "https://example.atlassian.net/"
 

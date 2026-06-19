@@ -46,7 +46,7 @@ def fresh_state_dir(tmp_path: Path) -> Path:
 async def test_run_checks_returns_all_named_checks(fresh_state_dir: Path) -> None:
     report = await run_checks(_config(fresh_state_dir))
     names = {r.name for r in report.results}
-    assert names == {"state_dir", "disk", "heartbeat", "pause", "db", "token"}
+    assert names == {"state_dir", "disk", "heartbeat", "pause", "db", "claude_api_key"}
 
 
 async def test_state_dir_ok_when_exists(fresh_state_dir: Path) -> None:
@@ -112,8 +112,8 @@ async def test_db_ok_when_migrated(fresh_state_dir: Path) -> None:
 
 
 class _StubProvider:
-    def load_oauth_token(self) -> str:
-        return "stub-token-12345"
+    def load_claude_api_key(self) -> str:
+        return "stub-api-key-1234"
 
     def load_secret(self, key: str) -> str:
         return f"stub-secret-{key}"
@@ -127,23 +127,23 @@ async def test_token_check_ok_when_provider_returns_token(
 
     monkeypatch.setattr(secrets, "build_provider", _build)
     report = await run_checks(_config(fresh_state_dir))
-    token = _by_name(report, "token")
-    assert token.status == "ok"
-    assert "provider=keychain" in token.detail
-    assert "token len=16" in token.detail
+    result = _by_name(report, "claude_api_key")
+    assert result.status == "ok"
+    assert "provider=keychain" in result.detail
+    assert "key len=17" in result.detail
 
 
 async def test_token_check_fail_when_provider_unavailable(
     fresh_state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _build(**_: object) -> secrets.SecretsProvider:
-        raise AuthError("keychain: no token")
+        raise AuthError("keychain: no key")
 
     monkeypatch.setattr(secrets, "build_provider", _build)
     report = await run_checks(_config(fresh_state_dir))
-    token = _by_name(report, "token")
-    assert token.status == "fail"
-    assert "unavailable" in token.detail
+    result = _by_name(report, "claude_api_key")
+    assert result.status == "fail"
+    assert "unavailable" in result.detail
 
 
 async def test_report_ok_property_false_on_fail(fresh_state_dir: Path) -> None:

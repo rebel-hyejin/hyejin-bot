@@ -89,10 +89,10 @@ async def boot(options: BootOptions | None = None) -> None:
             await _apply_ratelimit_config(db, config)
             # 5. secrets — fail fast so launchd/systemd surfaces exit 78.
             #    When tests inject a fake claude session factory, skip the
-            #    real token probe (no SDK subprocess will spawn).
-            oauth_token = _maybe_load_oauth_token(config, options)
+            #    real key probe (no SDK subprocess will spawn).
+            claude_api_key = _maybe_load_claude_api_key(config, options)
             # 7. container, 8. heartbeat, 9. dispatcher, 11. signals
-            await _run_supervised(config, db, options, oauth_token=oauth_token)
+            await _run_supervised(config, db, options, claude_api_key=claude_api_key)
         finally:
             await _wal_checkpoint(db)
             await db.close()
@@ -118,23 +118,23 @@ async def _apply_ratelimit_config(db: aiosqlite.Connection, config: Config) -> N
     await db.commit()
 
 
-def _maybe_load_oauth_token(config: Config, options: BootOptions) -> str | None:
+def _maybe_load_claude_api_key(config: Config, options: BootOptions) -> str | None:
     """Boot-time secrets probe (PLAN §2.3 step 5). AuthError → exit 78.
 
     Returns None when a test override already supplies the claude session
-    factory — the real CLI subprocess won't spawn so the token is unused.
+    factory — the real CLI subprocess won't spawn so the key is unused.
     """
     if options.overrides is not None and options.overrides.claude_session_factory is not None:
         return None
     provider = _build_secrets_provider(config, options)
-    return provider.load_oauth_token() if provider is not None else None
+    return provider.load_claude_api_key() if provider is not None else None
 
 
 def _build_secrets_provider(config: Config, options: BootOptions) -> secrets.SecretsProvider | None:
     """Construct the SecretsProvider per `[secrets]`, or None when tests
     have already supplied a Claude factory (no real boot-time probe needed).
 
-    Same gating logic as `_maybe_load_oauth_token` — keeps OAuth + named
+    Same gating logic as `_maybe_load_claude_api_key` — keeps API key + named
     secret loading in sync.
     """
     if options.overrides is not None and options.overrides.claude_session_factory is not None:
@@ -145,6 +145,13 @@ def _build_secrets_provider(config: Config, options: BootOptions) -> secrets.Sec
         keychain_account=config.secrets.keychain_account,
         file_path=config.secrets.file_path,
         insecure_env_allowed=options.insecure_env_allowed,
+        vault_addr=config.secrets.vault_addr,
+        vault_role_id_path=config.secrets.vault_role_id_path,
+        vault_secret_id_path=config.secrets.vault_secret_id_path,
+        vault_kv_mount=config.secrets.vault_kv_mount,
+        vault_kv_path=config.secrets.vault_kv_path,
+        vault_claude_api_key_field=config.secrets.vault_claude_api_key_field,
+        vault_timeout_seconds=config.secrets.vault_timeout_seconds,
     )
 
 
@@ -153,14 +160,14 @@ async def _run_supervised(
     db: aiosqlite.Connection,
     options: BootOptions,
     *,
-    oauth_token: str | None,
+    claude_api_key: str | None,
 ) -> None:
     """Build the container, recover, then run dispatcher + heartbeat under TaskGroup."""
     secrets_provider = _build_secrets_provider(config, options)
     container = await build(
         config,
         db,
-        oauth_token=oauth_token,
+        claude_api_key=claude_api_key,
         secrets_provider=secrets_provider,
         overrides=options.overrides,
     )

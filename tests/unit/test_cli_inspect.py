@@ -342,4 +342,4 @@ def test_inspect_handlers_ls_no_handlers_configured(tmp_path: Path) -> None:
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:  # pyright: ignore[reportUnusedFunction]
-    monkeypatch.delenv("DAEYEON_BOT_CONFIG", raising=False)
+    monkeypatch.delenv("HYEJIN_BOT_CONFIG", raising=False)

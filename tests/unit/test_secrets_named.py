@@ -107,23 +107,23 @@ def test_env_load_secret_rejects_empty_key() -> None:
         provider.load_secret("")
 
 
-# ─── load_oauth_token still works (backwards compat) ──────────────────────────
+# ─── load_claude_api_key paths per provider ───────────────────────────────────
 
 
-def test_keychain_oauth_token_path_unchanged() -> None:
-    provider = KeychainSecrets(service="hyejin-bot", account="oauth_token")
-    with patch("keyring.get_password", return_value="tok-oauth"):
-        assert provider.load_oauth_token() == "tok-oauth"
+def test_keychain_claude_api_key_path() -> None:
+    provider = KeychainSecrets(service="hyejin-bot", account="claude_api_key")
+    with patch("keyring.get_password", return_value="sk-ant-keychain"):
+        assert provider.load_claude_api_key() == "sk-ant-keychain"
 
 
-def test_file_oauth_token_path_unchanged(tmp_path: Path) -> None:
-    oauth_path = tmp_path / "oauth_token"
-    _write_0600(oauth_path, "oauth-value\n")
-    provider = FileSecrets(path=oauth_path)
-    assert provider.load_oauth_token() == "oauth-value"
+def test_file_claude_api_key_path(tmp_path: Path) -> None:
+    key_path = tmp_path / "claude_api_key"
+    _write_0600(key_path, "sk-ant-file-value\n")
+    provider = FileSecrets(path=key_path)
+    assert provider.load_claude_api_key() == "sk-ant-file-value"
 
 
-def test_env_oauth_token_path_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-env")
+def test_env_claude_api_key_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-env")
     provider = EnvSecrets()
-    assert provider.load_oauth_token() == "oauth-env"
+    assert provider.load_claude_api_key() == "sk-ant-env"

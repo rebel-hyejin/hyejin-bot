@@ -62,8 +62,16 @@ class RateLimitSection(BaseModel):
 class SecretsSection(BaseModel):
     provider: str = "keychain"
     keychain_service: str = "hyejin-bot"
-    keychain_account: str = "oauth_token"
-    file_path: str = "/etc/hyejin-bot/oauth_token"
+    keychain_account: str = "claude_api_key"
+    file_path: str = "/etc/hyejin-bot/claude_api_key"
+    # Vault (HashiCorp) provider knobs. Used only when provider="vault".
+    vault_addr: str = "https://vault.ssw.rbln.in"
+    vault_role_id_path: str = "~/bots/.vault/hyejin-bot.role_id"
+    vault_secret_id_path: str = "~/bots/.vault/hyejin-bot.secret_id"  # noqa: S105 — file path, not a credential value
+    vault_kv_mount: str = "secret"
+    vault_kv_path: str = "bots/hyejin-bot"
+    vault_claude_api_key_field: str = "ANTHROPIC_API_KEY"
+    vault_timeout_seconds: float = 5.0
 
 
 class ClaudeSection(BaseModel):
@@ -227,7 +235,7 @@ class Config(BaseSettings):
     # (`TriggerEntry`, `HandlerEntry`) keep `extra="allow"` because they
     # pass arbitrary kwargs through to constructors.
     model_config = SettingsConfigDict(
-        env_prefix="DAEYEON_BOT__",
+        env_prefix="HYEJIN_BOT__",
         env_nested_delimiter="__",
         extra="forbid",
     )
@@ -296,13 +304,13 @@ class Config(BaseSettings):
 def resolve_config_path(explicit: str | None) -> Path | None:
     """Public: resolve which config.toml `load()` would use, or None for defaults.
 
-    Order: explicit `--config` > `DAEYEON_BOT_CONFIG` env > `./config.toml`.
+    Order: explicit `--config` > `HYEJIN_BOT_CONFIG` env > `./config.toml`.
     Used by `cli/ops.py:doctor` to surface "using defaults" when nothing
     resolves, so a first-time operator doesn't get silent fallback behavior.
     """
     if explicit:
         return Path(explicit).expanduser()
-    env = os.environ.get("DAEYEON_BOT_CONFIG")
+    env = os.environ.get("HYEJIN_BOT_CONFIG")
     if env:
         return Path(env).expanduser()
     default = Path.cwd() / "config.toml"

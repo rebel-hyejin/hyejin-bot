@@ -17,7 +17,7 @@ def test_keychain_returns_token(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(secrets.keyring, "get_password", _get_password)
     provider = secrets.KeychainSecrets(service="svc", account="acct")
-    assert provider.load_oauth_token() == "tok-abc"
+    assert provider.load_claude_api_key() == "tok-abc"
 
 
 def test_keychain_raises_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -27,7 +27,7 @@ def test_keychain_raises_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(secrets.keyring, "get_password", _get_password)
     provider = secrets.KeychainSecrets(service="svc", account="acct")
     with pytest.raises(AuthError, match="keychain: no secret"):
-        provider.load_oauth_token()
+        provider.load_claude_api_key()
 
 
 def test_keychain_wraps_no_backend_as_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,7 +39,7 @@ def test_keychain_wraps_no_backend_as_auth_error(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(secrets.keyring, "get_password", _raise)
     provider = secrets.KeychainSecrets(service="svc", account="acct")
     with pytest.raises(AuthError, match="keychain: backend unavailable"):
-        provider.load_oauth_token()
+        provider.load_claude_api_key()
 
 
 def test_file_secrets_reads_token(tmp_path: Path) -> None:
@@ -47,13 +47,13 @@ def test_file_secrets_reads_token(tmp_path: Path) -> None:
     secret_file.write_text("tok-xyz\n", encoding="utf-8")
     secret_file.chmod(0o600)
     provider = secrets.FileSecrets(path=secret_file)
-    assert provider.load_oauth_token() == "tok-xyz"
+    assert provider.load_claude_api_key() == "tok-xyz"
 
 
 def test_file_secrets_missing_raises_auth_error(tmp_path: Path) -> None:
     provider = secrets.FileSecrets(path=tmp_path / "absent")
     with pytest.raises(AuthError, match="missing"):
-        provider.load_oauth_token()
+        provider.load_claude_api_key()
 
 
 def test_file_secrets_empty_raises_auth_error(tmp_path: Path) -> None:
@@ -62,7 +62,7 @@ def test_file_secrets_empty_raises_auth_error(tmp_path: Path) -> None:
     secret_file.chmod(0o600)
     provider = secrets.FileSecrets(path=secret_file)
     with pytest.raises(AuthError, match="empty"):
-        provider.load_oauth_token()
+        provider.load_claude_api_key()
 
 
 def test_file_secrets_rejects_group_readable(tmp_path: Path) -> None:
@@ -71,7 +71,7 @@ def test_file_secrets_rejects_group_readable(tmp_path: Path) -> None:
     secret_file.chmod(0o640)
     provider = secrets.FileSecrets(path=secret_file)
     with pytest.raises(ConfigError, match="0o600"):
-        provider.load_oauth_token()
+        provider.load_claude_api_key()
 
 
 def test_file_secrets_rejects_world_readable(tmp_path: Path) -> None:
@@ -80,20 +80,20 @@ def test_file_secrets_rejects_world_readable(tmp_path: Path) -> None:
     secret_file.chmod(0o604)
     provider = secrets.FileSecrets(path=secret_file)
     with pytest.raises(ConfigError, match="0o600"):
-        provider.load_oauth_token()
+        provider.load_claude_api_key()
 
 
 def test_env_returns_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "env-tok")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "env-tok")
     provider = secrets.EnvSecrets()
-    assert provider.load_oauth_token() == "env-tok"
+    assert provider.load_claude_api_key() == "env-tok"
 
 
 def test_env_raises_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     provider = secrets.EnvSecrets()
     with pytest.raises(AuthError, match="not set"):
-        provider.load_oauth_token()
+        provider.load_claude_api_key()
 
 
 def test_build_provider_keychain() -> None:
@@ -142,7 +142,7 @@ def test_build_provider_env_allows_when_flag_set() -> None:
 def test_build_provider_unknown_raises() -> None:
     with pytest.raises(ConfigError, match="unknown secrets provider"):
         secrets.build_provider(
-            name="vault",
+            name="onepassword",
             keychain_service="",
             keychain_account="",
             file_path="",
@@ -171,7 +171,7 @@ def test_file_secrets_expanduser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         file_path="~/tok",
     )
     assert isinstance(provider, secrets.FileSecrets)
-    assert provider.load_oauth_token() == "tok-home"
+    assert provider.load_claude_api_key() == "tok-home"
 
 
 def test_file_secrets_actually_loads_after_chmod(tmp_path: Path) -> None:
@@ -179,4 +179,4 @@ def test_file_secrets_actually_loads_after_chmod(tmp_path: Path) -> None:
     secret_file.write_text("tok-fs", encoding="utf-8")
     secret_file.chmod(0o600)
     provider = secrets.FileSecrets(path=secret_file)
-    assert provider.load_oauth_token() == "tok-fs"
+    assert provider.load_claude_api_key() == "tok-fs"

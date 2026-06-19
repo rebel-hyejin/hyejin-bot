@@ -122,17 +122,24 @@ async def _check_db_and_migrations(db_path: Path) -> CheckResult:
 def _check_token(config: Config) -> CheckResult:
     """Probe the configured secrets provider and report success/failure.
 
-    The token itself is never logged — only its length and the provider name.
+    The key itself is never logged — only its length and the provider name.
     """
-    name = "token"
+    name = "claude_api_key"
     try:
         provider = secrets.build_provider(
             name=config.secrets.provider,
             keychain_service=config.secrets.keychain_service,
             keychain_account=config.secrets.keychain_account,
             file_path=config.secrets.file_path,
+            vault_addr=config.secrets.vault_addr,
+            vault_role_id_path=config.secrets.vault_role_id_path,
+            vault_secret_id_path=config.secrets.vault_secret_id_path,
+            vault_kv_mount=config.secrets.vault_kv_mount,
+            vault_kv_path=config.secrets.vault_kv_path,
+            vault_claude_api_key_field=config.secrets.vault_claude_api_key_field,
+            vault_timeout_seconds=config.secrets.vault_timeout_seconds,
         )
-        token = provider.load_oauth_token()
+        api_key = provider.load_claude_api_key()
     except ConfigError as exc:
         return CheckResult(name=name, status="fail", detail=f"config: {exc}")
     except AuthError as exc:
@@ -140,7 +147,7 @@ def _check_token(config: Config) -> CheckResult:
     return CheckResult(
         name=name,
         status="ok",
-        detail=f"provider={config.secrets.provider} (token len={len(token)})",
+        detail=f"provider={config.secrets.provider} (key len={len(api_key)})",
     )
 
 

@@ -3,7 +3,7 @@
 Two implementations of the same `ClaudeSession` shape:
     * `FakeClaudeSession` — scripted responses for tests.
     * `RealClaudeSession` — wraps `claude_agent_sdk.ClaudeSDKClient`. The
-      OAuth token is passed to the CLI subprocess via an explicit env
+      Anthropic API key is passed to the CLI subprocess via an explicit env
       allowlist (not by inheriting the daemon's environment).
 
 Errors map onto `core.errors`:
@@ -129,7 +129,7 @@ class RealClaudeSession:
     session per persona.
     """
 
-    oauth_token: str
+    api_key: str
     model: str | None
     default_system_prompt: str | None
     _client: ClaudeSDKClient | None = field(default=None, init=False)
@@ -184,7 +184,7 @@ class RealClaudeSession:
         options = ClaudeAgentOptions(
             model=self.model,
             system_prompt=system_prompt,
-            env={"CLAUDE_CODE_OAUTH_TOKEN": self.oauth_token},
+            env={"ANTHROPIC_API_KEY": self.api_key},
         )
         client = ClaudeSDKClient(options=options)
         try:
@@ -243,13 +243,13 @@ def _raise_process_error(exc: ProcessError) -> NoReturn:
 
 
 def make_real_factory(
-    *, oauth_token: str, model: str | None, default_system_prompt: str | None
+    *, api_key: str, model: str | None, default_system_prompt: str | None
 ) -> Callable[[], RealClaudeSession]:
     """Closure that builds a fresh `RealClaudeSession` per dispatch."""
 
     def _factory() -> RealClaudeSession:
         return RealClaudeSession(
-            oauth_token=oauth_token,
+            api_key=api_key,
             model=model,
             default_system_prompt=default_system_prompt,
         )

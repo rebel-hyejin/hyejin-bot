@@ -88,7 +88,7 @@ def test_ops_doctor_runs_and_renders_each_check(tmp_path: Path) -> None:
     # must have produced one line per check.
     assert result.exit_code in (0, 1)
     out = result.output
-    for name in ("state_dir", "disk", "heartbeat", "pause", "db", "token"):
+    for name in ("state_dir", "disk", "heartbeat", "pause", "db", "claude_api_key"):
         assert name in out, f"missing check in doctor output: {name}\n{out}"
 
 

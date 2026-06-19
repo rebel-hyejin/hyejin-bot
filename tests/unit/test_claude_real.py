@@ -68,7 +68,7 @@ def stub(monkeypatch: pytest.MonkeyPatch) -> _StubClient:
 
 def _session() -> claude_mod.RealClaudeSession:
     return claude_mod.RealClaudeSession(
-        oauth_token="tok-abc",
+        api_key="sk-ant-api03-test",
         model="claude-opus-4-7",
         default_system_prompt="You are helpful.",
     )
@@ -260,12 +260,12 @@ async def test_whitespace_only_response_raises_transient(stub: _StubClient) -> N
 
 def test_make_real_factory_builds_sessions() -> None:
     factory = claude_mod.make_real_factory(
-        oauth_token="tok",
+        api_key="sk-ant-api03-test",
         model="m",
         default_system_prompt="sp",
     )
     session = factory()
     assert isinstance(session, claude_mod.RealClaudeSession)
-    assert session.oauth_token == "tok"
+    assert session.api_key == "sk-ant-api03-test"
     assert session.model == "m"
     assert session.default_system_prompt == "sp"

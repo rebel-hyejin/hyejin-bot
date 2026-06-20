@@ -144,11 +144,12 @@ def _check_token(config: Config) -> CheckResult:
         return CheckResult(name=name, status="fail", detail=f"config: {exc}")
     except AuthError as exc:
         return CheckResult(name=name, status="fail", detail=f"unavailable: {exc}")
-    return CheckResult(
-        name=name,
-        status="ok",
-        detail=f"provider={config.secrets.provider} (key len={len(api_key)})",
+    detail = (
+        f"provider={config.secrets.provider} (key len={len(api_key)})"
+        if api_key
+        else f"provider={config.secrets.provider} (oauth credentials file path)"
     )
+    return CheckResult(name=name, status="ok", detail=detail)
 
 
 async def _integrity_check(conn: aiosqlite.Connection) -> str:

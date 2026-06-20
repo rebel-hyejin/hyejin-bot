@@ -126,6 +126,72 @@ async def test_per_call_system_override_is_passed_to_sdk(
     assert options.system_prompt == "persona-A"
 
 
+async def test_api_key_flows_into_options_env(
+    stub: _StubClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Non-empty api_key → injected as ANTHROPIC_API_KEY env into the CLI."""
+    captured: dict[str, object] = {}
+
+    def _factory(*, options: object, **_kwargs: object) -> _StubClient:
+        captured["options"] = options
+        return stub
+
+    monkeypatch.setattr(claude_mod, "ClaudeSDKClient", _factory)
+    stub.scripted_messages = [
+        AssistantMessage(
+            content=[TextBlock(text="ok")],
+            model="m",
+            parent_tool_use_id=None,
+            error=None,
+            usage=None,
+            message_id="mid",
+            stop_reason=None,
+            session_id="s",
+            uuid="u",
+        ),
+    ]
+    async with _session() as session:
+        await session.query("hi")
+    options = cast("claude_mod.ClaudeAgentOptions", captured["options"])
+    assert options.env == {"ANTHROPIC_API_KEY": "sk-ant-api03-test"}
+
+
+async def test_empty_api_key_yields_clean_env(
+    stub: _StubClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty api_key → options.env stays empty so claude CLI can read
+    ~/.claude/.credentials.json (org-OAuth path)."""
+    captured: dict[str, object] = {}
+
+    def _factory(*, options: object, **_kwargs: object) -> _StubClient:
+        captured["options"] = options
+        return stub
+
+    monkeypatch.setattr(claude_mod, "ClaudeSDKClient", _factory)
+    stub.scripted_messages = [
+        AssistantMessage(
+            content=[TextBlock(text="ok")],
+            model="m",
+            parent_tool_use_id=None,
+            error=None,
+            usage=None,
+            message_id="mid",
+            stop_reason=None,
+            session_id="s",
+            uuid="u",
+        ),
+    ]
+    session = claude_mod.RealClaudeSession(
+        api_key="",
+        model="m",
+        default_system_prompt="sp",
+    )
+    async with session:
+        await session.query("hi")
+    options = cast("claude_mod.ClaudeAgentOptions", captured["options"])
+    assert options.env == {}
+
+
 async def test_changing_system_mid_session_raises(stub: _StubClient) -> None:
     """Same session, two queries with different system → TransientError."""
     stub.scripted_messages = [

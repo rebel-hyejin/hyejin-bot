@@ -83,7 +83,10 @@ def test_load_secret_uppercases_key(tmp_path: Path) -> None:
     assert provider.load_secret("jira_user") == "automation@rebellions.ai"
 
 
-def test_missing_field_raises_auth_error(tmp_path: Path) -> None:
+def test_missing_field_returns_empty_for_oauth_fallback(tmp_path: Path) -> None:
+    """ANTHROPIC_API_KEY absent from KV → "" so the CLI adapter omits the env
+    and falls back to ~/.claude/.credentials.json (org/OAuth path)."""
+
     def _handler(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/v1/auth/approle/login":
             return httpx.Response(200, json={"auth": {"client_token": "tok"}})
@@ -92,8 +95,7 @@ def test_missing_field_raises_auth_error(tmp_path: Path) -> None:
         return httpx.Response(204)
 
     provider = _build_provider(tmp_path, _handler)
-    with pytest.raises(AuthError, match="ANTHROPIC_API_KEY"):
-        provider.load_claude_api_key()
+    assert provider.load_claude_api_key() == ""
 
 
 def test_approle_login_failure_maps_to_auth_error(tmp_path: Path) -> None:

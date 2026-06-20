@@ -164,8 +164,15 @@ class VaultSecrets:
     http_client: httpx.Client | None = field(default=None)
 
     def load_claude_api_key(self) -> str:
+        """Return the API key from KV, or "" if the operator opted into the
+        OAuth/credentials-file path (field absent or empty in KV).
+
+        See `infra/claude.py:RealClaudeSession` — empty key tells the CLI
+        adapter to leave env clean so claude can read `~/.claude/.credentials.json`.
+        """
         data = self._read_kv()
-        return self._field(data, self.claude_api_key_field)
+        value = data.get(self.claude_api_key_field, "")
+        return value if isinstance(value, str) else ""
 
     def load_secret(self, key: str) -> str:
         if not key:

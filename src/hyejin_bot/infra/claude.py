@@ -127,6 +127,13 @@ class RealClaudeSession:
     `system=` override or `default_system_prompt`. A subsequent query in
     the same session may not change the system prompt — open a new
     session per persona.
+
+    Auth: when `api_key` is non-empty we inject it into the CLI subprocess
+    as `ANTHROPIC_API_KEY` (pay-as-you-go path). When empty, the CLI falls
+    back to its standard credentials lookup (`~/.claude/.credentials.json`
+    OR macOS Keychain — org-OAuth path). Both backed by the daemon's secrets
+    provider: an empty string from KV means "the operator stores the OAuth
+    credentials file out of band; don't poison the env."
     """
 
     api_key: str
@@ -181,10 +188,14 @@ class RealClaudeSession:
                     " open a new session per persona"
                 )
             return self._client
+        # Empty api_key → operator opted into the OAuth/credentials-file path;
+        # don't inject ANTHROPIC_API_KEY (the CLI strictly prefers env over
+        # credentials, so a poisoned env would shadow the file).
+        cli_env: dict[str, str] = {"ANTHROPIC_API_KEY": self.api_key} if self.api_key else {}
         options = ClaudeAgentOptions(
             model=self.model,
             system_prompt=system_prompt,
-            env={"ANTHROPIC_API_KEY": self.api_key},
+            env=cli_env,
         )
         client = ClaudeSDKClient(options=options)
         try:

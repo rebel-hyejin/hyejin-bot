@@ -146,6 +146,31 @@ async def test_token_check_fail_when_provider_unavailable(
     assert "unavailable" in result.detail
 
 
+class _OauthFallbackProvider:
+    """Operator stores OAuth credentials file out of band — KV returns ""."""
+
+    def load_claude_api_key(self) -> str:
+        return ""
+
+    def load_secret(self, key: str) -> str:
+        return f"stub-secret-{key}"
+
+
+async def test_token_check_ok_when_oauth_fallback(
+    fresh_state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty key from KV is OK — surfaces as 'oauth credentials file path'."""
+
+    def _build(**_: object) -> secrets.SecretsProvider:
+        return _OauthFallbackProvider()
+
+    monkeypatch.setattr(secrets, "build_provider", _build)
+    report = await run_checks(_config(fresh_state_dir))
+    result = _by_name(report, "claude_api_key")
+    assert result.status == "ok"
+    assert "oauth credentials file path" in result.detail
+
+
 async def test_report_ok_property_false_on_fail(fresh_state_dir: Path) -> None:
     flag = fresh_state_dir / "heartbeat"
     flag.touch()

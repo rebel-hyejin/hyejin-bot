@@ -24,6 +24,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 import pytest
@@ -97,6 +98,8 @@ async def _build_handler(
     persona_body: str = _PERSONA_BODY,
     factory: FakeFactory | None = None,
     config_overrides: PrReviewHandlerEntry | None = None,
+    slack: Any = None,
+    slack_channel: str = "",
 ) -> tuple[PrReviewHandler, aiosqlite.Connection, FakeClaudeSession]:
     skills_root = tmp_path / "skills"
     materialize_persona(skills_root, "pr-review", body=persona_body)
@@ -109,14 +112,18 @@ async def _build_handler(
         min_persona_chars=50,
         size_budget=SizeBudget(max_lines=1000, max_files=50),
     )
-    handler = PrReviewHandler(
-        manifest=MANIFEST,
-        gh=fake_gh,
-        persona_loader=loader,
-        config=cfg,
-        github_username=fake_gh.user_login,
-        db=conn,
-    )
+    handler_kwargs: dict[str, Any] = {
+        "manifest": MANIFEST,
+        "gh": fake_gh,
+        "persona_loader": loader,
+        "config": cfg,
+        "github_username": fake_gh.user_login,
+        "db": conn,
+    }
+    if slack is not None:
+        handler_kwargs["slack"] = slack
+        handler_kwargs["slack_channel"] = slack_channel
+    handler = PrReviewHandler(**handler_kwargs)
     return handler, conn, fake_session if factory is None else factory.session
 
 
@@ -1009,6 +1016,146 @@ async def test_verdict_approve_still_posts_comment_event(tmp_path: Path) -> None
         assert posted[0]["comments"] == []
         # The LGTM GIF still rides along on an APPROVE-verdict body.
         assert "media.giphy.com" in posted[0]["body"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_lgtm_eligible_sends_slack_dm(tmp_path: Path) -> None:
+    """verdict=APPROVE triggers a Slack DM with the PR link.
+
+    The DM is informational — see `pr_review_handler._notify_lgtm_eligible`.
+    """
+    from hyejin_bot.infra.slack import FakeSlackClient
+
+    fake_slack = FakeSlackClient()
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "verdict": "APPROVE",
+                    "summary": (
+                        "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
+                        "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
+                        "— hyejin-bot 🐱✨"
+                    ),
+                    "comments": [],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(
+        tmp_path,
+        fake_gh=fake_gh,
+        factory=factory,
+        slack=fake_slack,
+        slack_channel="D08GP012483",
+    )
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+        # One DM with the PR URL + the LGTM-eligible nudge.
+        assert len(fake_slack.calls) == 1
+        sent = fake_slack.calls[0]
+        assert sent["channel"] == "D08GP012483"
+        assert "LGTM-eligible" in sent["text"]
+        assert "o/r#7" in sent["text"]
+        assert "github.com/o/r/pull/7" in sent["text"]
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_slack_failure_does_not_break_review_post(tmp_path: Path) -> None:
+    """A Slack outage must not affect the GitHub-side post or audit."""
+    from hyejin_bot.core.errors import TransientError
+    from hyejin_bot.infra.slack import FakeSlackClient
+
+    fake_slack = FakeSlackClient(raise_on_post=TransientError("rate_limited"))
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "verdict": "APPROVE",
+                    "summary": (
+                        "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
+                        "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
+                        "— hyejin-bot 🐱✨"
+                    ),
+                    "comments": [],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(
+        tmp_path,
+        fake_gh=fake_gh,
+        factory=factory,
+        slack=fake_slack,
+        slack_channel="D08GP012483",
+    )
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        # Slack raised — handler still acks.
+        assert isinstance(result, Ack)
+        # GitHub side still posted exactly one COMMENT review.
+        posted = fake_gh.posted_reviews()
+        assert len(posted) == 1
+        assert posted[0]["event"] == "COMMENT"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_non_lgtm_verdict_skips_slack(tmp_path: Path) -> None:
+    """verdict=PASS / CONCERNS / FAIL must NOT trigger the LGTM DM."""
+    from hyejin_bot.infra.slack import FakeSlackClient
+
+    fake_slack = FakeSlackClient()
+    fake_gh = FakeGh()
+    fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
+    factory = FakeFactory(
+        session=FakeClaudeSession(
+            default=json.dumps(
+                {
+                    "verdict": "CONCERNS",
+                    "summary": (
+                        "**Verdict**: CONCERNS — MAJOR 1건.\n\n"
+                        "**개요**\n검토 필요.\n\n"
+                        "— hyejin-bot 🐱✨"
+                    ),
+                    "comments": [
+                        {
+                            "path": "src/foo.py",
+                            "line": 6,
+                            "body": "[MAJOR] src/foo.py:6 — guard.",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+    handler, conn, _ = await _build_handler(
+        tmp_path,
+        fake_gh=fake_gh,
+        factory=factory,
+        slack=fake_slack,
+        slack_channel="D08GP012483",
+    )
+    try:
+        event = _manual_event()
+        await _seed_event_row(conn, event)
+        await handler.handle(event, _ctx(factory))
+        # Non-LGTM verdict → no DM.
+        assert fake_slack.calls == []
     finally:
         await conn.close()
 

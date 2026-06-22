@@ -79,6 +79,25 @@ class ClaudeSection(BaseModel):
     default_system_prompt: str = "You are hyejin's helpful assistant."
 
 
+class SlackSection(BaseModel):
+    """Slack notification knobs. Token comes from the secrets provider
+    (Vault field `SLACK_BOT_TOKEN`); only the channel + toggles live here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    # When false, the pr_review handler never opens a Slack client. Defaults
+    # off so a fresh install doesn't surprise-DM the operator.
+    enabled: bool = False
+    # Operator DM id `D...` (best), public channel id `C...`, or `#name`.
+    # See memory: hyejin DM is `D08GP012483`.
+    channel: str = ""
+    # Per-call timeout for chat.postMessage.
+    timeout_seconds: float = 5.0
+    # Vault secret field that holds the bot token. Defaults to the well-known
+    # key already in `secret/bots/hyejin-bot`.
+    bot_token_field: str = "SLACK_BOT_TOKEN"  # noqa: S105 — field NAME, not the value
+
+
 class GitHubConfig(BaseModel):
     """GitHub integration knobs. Auth itself flows through `gh` CLI."""
 
@@ -249,6 +268,7 @@ class Config(BaseSettings):
     github: GitHubConfig = Field(default_factory=GitHubConfig)
     jira: JiraConfig = Field(default_factory=JiraConfig)
     loki: LokiConfig = Field(default_factory=LokiConfig)
+    slack: SlackSection = Field(default_factory=SlackSection)
 
     triggers: dict[str, TriggerEntry] = Field(default_factory=dict)
     handlers: dict[str, HandlerEntry] = Field(default_factory=dict)

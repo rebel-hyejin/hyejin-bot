@@ -42,6 +42,7 @@ from hyejin_bot.infra.jira_client import FieldDiscovery, JiraClient, JiraIdentit
 from hyejin_bot.infra.loki import LokiClient
 from hyejin_bot.infra.persona_loader import PersonaLoader
 from hyejin_bot.infra.secrets import SecretsProvider
+from hyejin_bot.infra.slack import HttpSlackClient
 from hyejin_bot.infra.ssh_logs import SshLogClient
 from hyejin_bot.infra.ssw_bundle import SswBundleClient
 
@@ -82,6 +83,7 @@ class ContainerOverrides:
     field_discovery: FieldDiscovery | None = None
     secrets_provider: SecretsProvider | None = None
     project_root: Any = None  # Path | None — project root for ssw_bundle path guard
+    slack: Any = None  # SlackClient or a FakeSlackClient; None → fall back to config-driven build
 
 
 async def build(
@@ -123,12 +125,17 @@ async def build(
             gh=gh,
         )
         pause_guard = overrides.pause_guard or _make_pause_guard(config)
+        slack_client, slack_channel = _build_slack_side_channel(
+            config=config, overrides=overrides, secrets_provider=secrets_provider
+        )
         pr_deps = PrReviewDeps(
             gh=gh,
             persona_loader=persona_loader,
             db=db,
             github_username=github_username,
             pause_guard=pause_guard,
+            slack=slack_client,
+            slack_channel=slack_channel,
         )
 
     gh_trigger_deps = _build_gh_review_requested_deps(
@@ -379,6 +386,55 @@ def _make_pause_guard(config: Config) -> PauseGuard:
             raise QuotaError("paused")
 
     return _guard
+
+
+def _build_slack_side_channel(
+    *,
+    config: Config,
+    overrides: ContainerOverrides,
+    secrets_provider: SecretsProvider | None,
+) -> tuple[Any, str]:
+    """Build the optional Slack side-channel for LGTM-eligible notifications.
+
+    Returns `(client, channel)` — `client=None` (and `channel=""`) when:
+    - the test supplies a slack override of falsy value, OR
+    - config.slack.enabled is false, OR
+    - no secrets provider is available, OR
+    - the bot token field is missing from the provider.
+
+    Tests inject a FakeSlackClient via `overrides.slack`. Production reads
+    the bot token from the configured secrets provider field
+    (Vault `SLACK_BOT_TOKEN` by default).
+    """
+    if overrides.slack is not None:
+        return overrides.slack, config.slack.channel
+    if not config.slack.enabled:
+        return None, ""
+    if secrets_provider is None:
+        _log.warning(
+            "slack.side_channel_skipped",
+            reason="slack.enabled=true but no secrets provider",
+        )
+        return None, ""
+    if not config.slack.channel:
+        _log.warning(
+            "slack.side_channel_skipped",
+            reason="slack.enabled=true but slack.channel is empty",
+        )
+        return None, ""
+    try:
+        token = secrets_provider.load_secret(config.slack.bot_token_field)
+    except Exception as exc:
+        _log.warning(
+            "slack.side_channel_skipped",
+            reason=f"failed to load {config.slack.bot_token_field}",
+            error=str(exc),
+        )
+        return None, ""
+    return (
+        HttpSlackClient(bot_token=token, timeout_s=config.slack.timeout_seconds),
+        config.slack.channel,
+    )
 
 
 def _build_real_factory(config: Config, claude_api_key: str | None) -> Callable[[], ClaudeSession]:

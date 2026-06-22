@@ -103,6 +103,20 @@ syslog_query_template = '{hostname="{host}", logtype="syslog"}'
 # widened by this many extra hours on each side to recover them.
 syslog_window_extra_hours = 12
 
+[slack]
+# Side-channel DM notifications. Currently the pr_review handler sends a
+# DM when the persona returns verdict=APPROVE (LGTM-eligible). The bot
+# itself NEVER posts a GitHub APPROVE event — the operator manually
+# verifies and approves; the DM is the nudge to do so.
+#
+# Token lives in the secrets provider (Vault field `SLACK_BOT_TOKEN` in
+# `secret/bots/hyejin-bot` by default). Channel is the operator's DM id
+# (`D...`), a public channel id (`C...`), or `#channel-name`.
+enabled = false
+channel = ""
+timeout_seconds = 5.0
+bot_token_field = "SLACK_BOT_TOKEN"
+
 # ─── Triggers ──────────────────────────────────────────────────────────────────
 # A trigger is enabled if its section exists with `enabled = true`.
 

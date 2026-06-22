@@ -136,6 +136,11 @@ class PrReviewHandler:
     github_username: str
     db: Any  # aiosqlite.Connection — Any to avoid circular type stub on tests.
     pause_guard: PauseGuard = _no_pause
+    # Optional Slack side-channel. When set, the handler DMs the operator
+    # after posting an LGTM-eligible review (verdict=APPROVE). Failure to
+    # send is logged and swallowed — Slack is informational, not the gate.
+    slack: Any = None  # SlackClient | None
+    slack_channel: str = ""
 
     async def handle(self, event: Event, ctx: HandlerContext) -> HandlerResult:
         # PAUSE check first so even the size-budget short-circuit honors it.
@@ -511,7 +516,42 @@ class PrReviewHandler:
             inline_count=len(kept),
             superseded=is_force_supersede,
         )
+        if wants_lgtm:
+            await self._notify_lgtm_eligible(sized, new_review_id)
         return Ack()
+
+    async def _notify_lgtm_eligible(self, sized: _SizedState, review_id: int | None) -> None:
+        """Side-channel DM to the operator when verdict=APPROVE.
+
+        Best-effort. A Slack failure must never affect the GitHub-side
+        outcome (audit row already written, review already posted). The
+        side channel is opt-in via `[slack]` config + slack provider
+        injected by the container.
+        """
+        if self.slack is None or not self.slack_channel:
+            return
+        pr_url = f"https://github.com/{sized.repo}/pull/{sized.pr_number}"
+        review_url = f"{pr_url}#pullrequestreview-{review_id}" if review_id else pr_url
+        text = (
+            f":sparkles: *LGTM-eligible*: <{pr_url}|{sized.repo}#{sized.pr_number}>\n"
+            f"`{sized.head_sha[:8]}` — 매뉴얼 검증 후 직접 APPROVE 권장.\n"
+            f"리뷰 본문: <{review_url}|view>"
+        )
+        try:
+            await self.slack.post_message(channel=self.slack_channel, text=text)
+            _log.info(
+                "pr_review.slack_notified",
+                repo=sized.repo,
+                pr_number=sized.pr_number,
+                channel=self.slack_channel,
+            )
+        except Exception as exc:
+            _log.warning(
+                "pr_review.slack_notify_failed",
+                repo=sized.repo,
+                pr_number=sized.pr_number,
+                error=str(exc),
+            )
 
     async def _write_audit(self, **kwargs: Any) -> None:
         await insert_audit(self.db, **kwargs)

@@ -71,6 +71,10 @@ class PrReviewDeps:
     `pr_review` in that case so listing config doesn't require booting
     `gh` / persona / SQLite. The dispatcher path (via `container.build`)
     must always pass them in.
+
+    `slack` is optional. When present (and `slack.enabled=true`), the
+    handler pings the operator's DM with the PR URL after posting an
+    LGTM-eligible (verdict=APPROVE) review. None = no side-channel.
     """
 
     gh: Any
@@ -78,6 +82,8 @@ class PrReviewDeps:
     db: Any
     github_username: str
     pause_guard: PauseGuard | None = None
+    slack: Any = None  # SlackClient | None
+    slack_channel: str = ""
 
 
 @dataclass(slots=True)
@@ -183,6 +189,9 @@ def instantiate_handler(
         }
         if pr_review_deps.pause_guard is not None:
             kwargs["pause_guard"] = pr_review_deps.pause_guard
+        if pr_review_deps.slack is not None:
+            kwargs["slack"] = pr_review_deps.slack
+            kwargs["slack_channel"] = pr_review_deps.slack_channel
         instance = pr_review_handler.PrReviewHandler(**kwargs)
         return HandlerRecord(name=name, manifest=manifest, instance=instance)
     if name == "jira_triage":

@@ -267,7 +267,7 @@ async def test_system_prompt_carries_persona_and_json_schema(tmp_path: Path) -> 
         assert "<= 1500 chars" in system
         assert "2500 chars" in system
         assert "Korean" in system
-        assert "— hyejin-bot 🐥" in system
+        assert "— hyejin-bot 🐱✨" in system
         assert "InlineComment" in system
         assert "MUST NOT contain the sign-off marker" in system
     finally:
@@ -318,7 +318,7 @@ async def test_review_self_downgrades_approve_to_comment(tmp_path: Path) -> None
                     "summary": (
                         "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
                         "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
-                        "— hyejin-bot 🐥"
+                        "— hyejin-bot 🐱✨"
                     ),
                     "comments": [],
                 }
@@ -986,7 +986,7 @@ async def test_verdict_approve_emits_gh_approve_event(tmp_path: Path) -> None:
                     "summary": (
                         "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
                         "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
-                        "— hyejin-bot 🐥"
+                        "— hyejin-bot 🐱✨"
                     ),
                     "comments": [],
                 }
@@ -1020,7 +1020,7 @@ async def test_verdict_pass_emits_gh_comment_event(tmp_path: Path) -> None:
                     "summary": (
                         "**Verdict**: PASS — MINOR 1개. 별도 PR 가능.\n\n"
                         "**개요**\n사소한 nit이 하나 있으나 머지 가능.\n\n"
-                        "— hyejin-bot 🐥"
+                        "— hyejin-bot 🐱✨"
                     ),
                     "comments": [
                         {
@@ -1062,7 +1062,7 @@ async def test_approve_embeds_lgtm_gif_above_signoff(tmp_path: Path) -> None:
                     "summary": (
                         "**Verdict**: APPROVE — 모든 finding 0개.\n\n"
                         "**개요**\n변경사항은 작고 컨벤션을 따라간다.\n\n"
-                        "— hyejin-bot 🐥"
+                        "— hyejin-bot 🐱✨"
                     ),
                     "comments": [],
                 }
@@ -1083,7 +1083,7 @@ async def test_approve_embeds_lgtm_gif_above_signoff(tmp_path: Path) -> None:
         assert "https://media.giphy.com/media/" in body
         # Sign-off invariant: GIF goes above it, sign-off remains the last line.
         last_non_empty = next(line for line in reversed(body.split("\n")) if line.strip())
-        assert last_non_empty == "— hyejin-bot 🐥"
+        assert last_non_empty == "— hyejin-bot 🐱✨"
     finally:
         await conn.close()
 

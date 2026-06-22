@@ -15,6 +15,7 @@ from hyejin_bot.core.errors import ValidationError
 from hyejin_bot.core.events import Event, make_event
 from hyejin_bot.handlers.pr_review import (
     _append_folded_bullets,  # pyright: ignore[reportPrivateUsage]
+    _normalize_signoff,  # pyright: ignore[reportPrivateUsage]
     _parse_payload,  # pyright: ignore[reportPrivateUsage]
     _read_author,  # pyright: ignore[reportPrivateUsage]
     _read_head_sha,  # pyright: ignore[reportPrivateUsage]
@@ -204,16 +205,16 @@ def test_append_folded_bullets_inserts_before_signoff() -> None:
     """Sign-off must remain the last non-empty line — `_OUTPUT_DIRECTIVE`
     enforces this on Claude's side, the helper must not break it after.
     """
-    summary = "Verdict: PASS — looks fine.\n\n개요\n간단한 변경.\n\n— hyejin-bot 🐥"
+    summary = "Verdict: PASS — looks fine.\n\n개요\n간단한 변경.\n\n— hyejin-bot 🐱✨"
     out = _append_folded_bullets(
         summary,
         [InlineComment(path="a.py", line=3, side="RIGHT", body="nit")],
     )
     last_non_empty = next(line for line in reversed(out.split("\n")) if line.strip())
-    assert last_non_empty == "— hyejin-bot 🐥"
+    assert last_non_empty == "— hyejin-bot 🐱✨"
     assert "- [a.py near L3] nit" in out
     bullets_idx = out.index("- [a.py near L3]")
-    signoff_idx = out.index("— hyejin-bot 🐥")
+    signoff_idx = out.index("— hyejin-bot 🐱✨")
     assert bullets_idx < signoff_idx
 
 
@@ -222,14 +223,14 @@ def test_append_folded_bullets_handles_role_primed_signoff() -> None:
         "Verdict: CONCERNS — major fix 권장.\n\n"
         "**Reviewer**: as Senior SRE\n\n"
         "개요\n변경 요약.\n\n"
-        "— hyejin-bot 🐥 (as Senior SRE)"
+        "— hyejin-bot 🐱✨ (as Senior SRE)"
     )
     out = _append_folded_bullets(
         summary,
         [InlineComment(path="b.py", line=7, side="RIGHT", body="evidence")],
     )
     last_non_empty = next(line for line in reversed(out.split("\n")) if line.strip())
-    assert last_non_empty == "— hyejin-bot 🐥 (as Senior SRE)"
+    assert last_non_empty == "— hyejin-bot 🐱✨ (as Senior SRE)"
     assert "- [b.py near L7] evidence" in out
 
 
@@ -296,3 +297,31 @@ def test_render_user_message_includes_diff_when_patch_is_string() -> None:
     )
     assert "```diff" in out
     assert "@@ -1,1 +1,1 @@" in out
+
+
+# ─── sign-off normalization ──────────────────────────────────────────────────
+
+
+def test_normalize_signoff_passthrough_when_canonical() -> None:
+    """Canonical cat+sparkles sign-off → untouched."""
+    body = "Verdict: PASS — looks fine.\n\n— hyejin-bot 🐱✨"
+    assert _normalize_signoff(body) == body
+
+
+def test_normalize_signoff_rewrites_chick_variant() -> None:
+    """Daeyeon-bot chick fallback gets corrected to hyejin's canonical."""
+    body = "Verdict: PASS — looks fine.\n\n— hyejin-bot 🐥"
+    expected = "Verdict: PASS — looks fine.\n\n— hyejin-bot 🐱✨"
+    assert _normalize_signoff(body) == expected
+
+
+def test_normalize_signoff_rewrites_role_primed_chick() -> None:
+    body = "Verdict: PASS — looks fine.\n\n— hyejin-bot 🐥 (as Senior SRE)"
+    expected = "Verdict: PASS — looks fine.\n\n— hyejin-bot 🐱✨ (as Senior SRE)"
+    assert _normalize_signoff(body) == expected
+
+
+def test_normalize_signoff_leaves_unrelated_body_alone() -> None:
+    """No sign-off at all (chat mode) → body is unchanged."""
+    body = "Just an inline note. Nothing to normalize here."
+    assert _normalize_signoff(body) == body

@@ -169,7 +169,7 @@ def test_build_comment_starts_with_status_badge() -> None:
 
 def test_build_comment_ends_with_signoff() -> None:
     out = build_comment(_draft())
-    assert "_— hyejin-bot 🐥_" in out
+    assert "_— hyejin-bot 🐱✨_" in out
     assert out.endswith("\n")
 
 

@@ -30,7 +30,7 @@ Layout (top-to-bottom):
 
   [Suspected duplicates — when non-empty]
 
-  _— hyejin-bot 🐥_
+  _— hyejin-bot 🐱✨_
 
 Attachment policy — we never dump full slices; only **±5 lines around
 each cited evidence quote**, overlapping windows merged. Empty / errored
@@ -395,7 +395,7 @@ def build_comment(
     if triage.suspected_duplicates:
         parts.extend(_duplicates_section(triage.suspected_duplicates))
 
-    parts.append("_— hyejin-bot 🐥_")
+    parts.append("_— hyejin-bot 🐱✨_")
 
     body = "\n".join(parts) + "\n"
     return _truncate_to_cap(body)

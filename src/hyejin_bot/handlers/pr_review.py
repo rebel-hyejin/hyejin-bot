@@ -413,7 +413,7 @@ class PrReviewHandler:
 
         # Italicized notice prepended above the Verdict line so it reads as
         # bot infrastructure metadata rather than review content. The
-        # sign-off invariant ("last non-empty line is `— hyejin-bot 🐥`")
+        # sign-off invariant ("last non-empty line is `— hyejin-bot 🐱✨`")
         # is preserved because we only touch the head of the body.
         is_force_supersede = sized.force and already_posted and prior is not None
         if is_force_supersede and prior is not None and prior.submitted_at is not None:
@@ -439,6 +439,7 @@ class PrReviewHandler:
         # URL is a vetted constant so it can't trip the redaction guard.
         if gh_event == "APPROVE":
             summary = _insert_above_signoff(summary, pick_lgtm_gif(sized.head_sha))
+        summary = _normalize_signoff(summary)
         posted = await self.gh.post_review(
             sized.repo,
             sized.pr_number,
@@ -757,7 +758,32 @@ def _filter_anchors(
     return (kept, folded)
 
 
-_SIGNOFF_PREFIX = "— hyejin-bot 🐥"
+_SIGNOFF_PREFIX = "— hyejin-bot 🐱✨"
+# Daeyeon-bot signature variants the LLM tends to fall back to despite the
+# persona's "no poultry emoji" hard rule. We rewrite anything matching these
+# to the canonical hyejin sign-off at post time so the persona identity is
+# byte-stable across review bodies.
+_LEGACY_SIGNOFF_PATTERNS = (
+    "— hyejin-bot 🐥",
+    "— hyejin-bot 🐤",
+    "— hyejin-bot 🐣",
+)
+
+
+def _normalize_signoff(summary: str) -> str:
+    """Force the trailing sign-off line to be the cat+sparkles variant.
+
+    The persona SKILL pins `— hyejin-bot 🐱✨`, but the upstream daeyeon-bot
+    chick emoji has strong prior in the model and leaks back occasionally.
+    Cheap, lossless fix: post-process the summary so the canonical sign-off
+    always reaches GitHub, no matter what the LLM emitted.
+    """
+    if _SIGNOFF_PREFIX in summary:
+        return summary
+    for legacy in _LEGACY_SIGNOFF_PATTERNS:
+        if legacy in summary:
+            return summary.replace(legacy, _SIGNOFF_PREFIX)
+    return summary
 
 
 def _insert_above_signoff(summary: str, block: str) -> str:

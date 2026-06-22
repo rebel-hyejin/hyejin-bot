@@ -213,6 +213,22 @@ NPU 하드웨어 fleet · 공유 자원 · regression scheduler.
 
 ---
 
+## Clean Architecture `[A*]`
+
+Dependency rule / boundary / framework-as-plugin 위반은 코드 자체가 작동해도 운영 단계에서 변경 비용을 폭증시킨다. CI/CD·infra 코드도 예외 아님 — handler가 외부 framework 타입을 반환하거나, infra adapter가 도메인 룰을 알면 부서 간 이관·테스트 격리가 깨진다.
+
+| ID | Name | Default severity | When to flag |
+|---|---|---|---|
+| `[A1]` | Dependency rule reversal | MAJOR | 내층(core / domain)이 외층(infra / framework)에 의존. import 화살표가 잘못된 방향. 예: `core/events.py` 가 `httpx` 또는 `aiosqlite` import. |
+| `[A2]` | Framework type leak across boundary | MAJOR | handler가 framework-bound 타입(예: `httpx.Response`, `aiosqlite.Row`)을 caller에 반환. 도메인 타입으로 변환 후 반환해야 swappable. |
+| `[A3]` | Boundary interface 누락 | MINOR | infra adapter에 Protocol/ABC 없이 concrete 클래스 직접 의존. test fake 주입 불가 — 우리 secrets/claude 패턴(`SecretsProvider` Protocol)과 대조. |
+| `[A4]` | Use-case 책임 혼재 | MAJOR | 하나의 handler가 (a) 도메인 결정, (b) infra I/O, (c) 외부 API 호출, (d) 응답 렌더링을 다 함. 4개 단계가 같은 함수에 묶이면 단위 테스트가 mock 4종을 동시에 잡아야 함 — 책임 분리 필요. |
+| `[A5]` | Circular import / 양방향 의존 | MINOR | 두 모듈이 서로 import. 분리할 공통 추상화 (`core/` 로 빼기)가 누락된 신호. |
+
+**Pet peeve**: `[A2]` framework type leak — 한 번 caller가 `httpx.Response` 를 직접 만지기 시작하면 adapter 교체 시 caller까지 다 수정해야 한다. handler 시그니처가 framework-free한지가 첫 신호.
+
+---
+
 ## Spec / Process Drift `[D*]`
 
 | ID | Name | Default severity | When to flag |
@@ -223,7 +239,7 @@ NPU 하드웨어 fleet · 공유 자원 · regression scheduler.
 | `[D4]` | Bypassed required review | CRITICAL | review-required path 우회 (force push / squash 후 review 손실). |
 | `[D5]` | Hidden behavior change in refactor | MAJOR | "refactor" PR인데 동작 변경 동반. |
 | `[D6]` | Documented runbook untouched | MINOR | 운영 절차 변경 동반인데 runbook 미갱신. |
-| `[D20]` | `Co-Authored-By:` trailer present | MAJOR | rebellions-sw 레포 commit message에 `Co-Authored-By:` 트레일러 포함 → checkpatch warning. AI co-author 자동 추가 도구 사용 시 자주 발생. 제거 + `git commit --amend` 후 force-push. |
+| `[D20]` | `Co-Authored-By:` trailer present (**rebellions-sw ONLY**) | MAJOR | `rebellions-sw/*` 레포 commit message에 `Co-Authored-By:` 트레일러 포함 → checkpatch warning. 다른 owner의 레포에서는 발행하지 말 것 (해당 정책은 rebellions-sw 전용). AI co-author 자동 추가 도구 사용 시 자주 발생. 제거 + `git commit --amend` 후 force-push. |
 | `[D21]` | Missing `Signed-off-by:` | MAJOR | DCO sign-off 누락. `git commit -s` 누적 습관. |
 | `[D22]` | Convention summary cited instead of source | MAJOR | `inv/`, `.github/workflows/`, `test/system/` 변경 시 에이전트 요약·간접 인용으로 컨벤션을 다룸. `docs/conventions/invoke.md` §1 echo=True / §5 단위 테스트 필수 등이 누락된 채로 코드가 들어옴. 원본을 직접 Read 한 후 작업해야 함. 기존 코드의 컨벤션 위반을 그대로 복사한 PR도 동일 등급. |
 | `[D23]` | Release PR base mismatch | CRITICAL | default branch가 `dev`인 레포에서 `release/x.x` 타겟 PR이 `--base` 누락으로 인해 base가 `dev`로 잡혀 생성됨. base/head 확인 (`gh pr view <n> --json baseRefName,headRefName`) 후 close + 재생성. |

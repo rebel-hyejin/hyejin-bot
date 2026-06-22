@@ -58,6 +58,9 @@ class FakeGh:
     _posted_reviews: list[dict[str, Any]] = field(default_factory=list)
     _next_review_id: int = field(default=0)
     _prior_reviews: list[dict[str, Any]] = field(default_factory=list)
+    _other_review_comments: list[dict[str, Any]] = field(default_factory=list)
+    _other_issue_comments: list[dict[str, Any]] = field(default_factory=list)
+    _other_pr_reviews: list[dict[str, Any]] = field(default_factory=list)
 
     # ── Helpers used by tests ────────────────────────────────────────────
 
@@ -261,6 +264,37 @@ class FakeGh:
     def seed_prior_reviews(self, reviews: list[dict[str, Any]]) -> None:
         """Test seam — preload the prior-reviews list for the next handler call."""
         self._prior_reviews = list(reviews)
+
+    async def list_all_pr_comments(
+        self,
+        repo: str,
+        pr_number: int,
+        *,
+        exclude_login: str = "",
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return seeded cross-actor comments — tests preload via
+        `seed_other_comments(...)`. Empty buckets by default."""
+        del repo, pr_number, exclude_login
+        return {
+            "review_comments": list(self._other_review_comments),
+            "issue_comments": list(self._other_issue_comments),
+            "pull_request_reviews": list(self._other_pr_reviews),
+        }
+
+    def seed_other_comments(
+        self,
+        *,
+        review_comments: list[dict[str, Any]] | None = None,
+        issue_comments: list[dict[str, Any]] | None = None,
+        pull_request_reviews: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Test seam — preload the cross-actor comment buckets for the next call."""
+        if review_comments is not None:
+            self._other_review_comments = list(review_comments)
+        if issue_comments is not None:
+            self._other_issue_comments = list(issue_comments)
+        if pull_request_reviews is not None:
+            self._other_pr_reviews = list(pull_request_reviews)
 
 
 __all__ = ["FakeGh"]

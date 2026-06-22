@@ -102,6 +102,13 @@ class _GhClient(Protocol):
         login: str,
         limit: int = ...,
     ) -> list[dict[str, Any]]: ...
+    async def list_all_pr_comments(
+        self,
+        repo: str,
+        pr_number: int,
+        *,
+        exclude_login: str = "",
+    ) -> dict[str, list[dict[str, Any]]]: ...
     async def post_review(
         self,
         repo: str,
@@ -182,6 +189,13 @@ class PrReviewHandler:
         prior_reviews = await self.gh.list_prior_reviews_with_comments(
             sized.repo, sized.pr_number, login=self.github_username, limit=2
         )
+        # Cross-actor comments: every comment from humans / Copilot /
+        # daeyeon-bot / other bots. Feeds SKILL.md trait #9 (PR-wide
+        # dedup) — the persona checks for semantic overlap before
+        # publishing a new finding. Failures degrade to empty buckets.
+        other_comments = await self.gh.list_all_pr_comments(
+            sized.repo, sized.pr_number, exclude_login=self.github_username
+        )
         review = await self._call_claude_with_retry(
             ctx=ctx,
             system_prompt=build_system_prompt(sized.persona.body),
@@ -194,6 +208,7 @@ class PrReviewHandler:
                 head_sha=sized.head_sha,
                 files=sized.files,
                 prior_reviews=prior_reviews,
+                other_comments=other_comments,
             ),
         )
 

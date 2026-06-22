@@ -325,6 +325,83 @@ class GhCli:
             r["inline_comments"] = comments_by_review.get(rid, []) if isinstance(rid, int) else []
         return recent
 
+    async def list_all_pr_comments(
+        self,
+        repo: str,
+        pr_number: int,
+        *,
+        exclude_login: str = "",
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Fetch the GitHub API 3-tuple needed for cross-actor PR-wide dedup.
+
+        Returns three buckets:
+        - ``review_comments``: inline comments tied to file:line via the
+          PR's pulls-comments endpoint (`pull_request_review_id` links to
+          the parent review). These are what dedup matches on file:line.
+        - ``issue_comments``: PR-body / non-inline comments. Dedup by
+          content similarity only — they have no file:line anchor.
+        - ``pull_request_reviews``: top-level review bodies. Useful for
+          dedup vs another bot's main verdict line.
+
+        Comments authored by ``exclude_login`` (typically hyejin-bot
+        itself) are dropped — the persona has its own prior-reviews
+        path for that case. Pending review entries (no `submitted_at`)
+        are excluded for ``pull_request_reviews``.
+
+        On any fetch error the corresponding bucket comes back empty —
+        cross-actor dedup is best-effort and never blocks a review.
+        Caller should pass the result into the user message under a
+        dedicated header so the persona can dedup against it (per
+        SKILL.md trait #9 + Hard rule).
+        """
+        review_comments: list[dict[str, Any]] = []
+        issue_comments: list[dict[str, Any]] = []
+        reviews: list[dict[str, Any]] = []
+        try:
+            rc_payload = await self._api(
+                "GET",
+                f"/repos/{repo}/pulls/{pr_number}/comments",
+                extra=("-f", "per_page=100"),
+                paginate=True,
+            )
+        except Exception:
+            rc_payload = []
+        if isinstance(rc_payload, list):
+            review_comments = _filter_actors(
+                cast("list[Any]", rc_payload), exclude_login=exclude_login
+            )
+        try:
+            ic_payload = await self._api(
+                "GET",
+                f"/repos/{repo}/issues/{pr_number}/comments",
+                extra=("-f", "per_page=100"),
+                paginate=True,
+            )
+        except Exception:
+            ic_payload = []
+        if isinstance(ic_payload, list):
+            issue_comments = _filter_actors(
+                cast("list[Any]", ic_payload), exclude_login=exclude_login
+            )
+        try:
+            rv_payload = await self._api(
+                "GET",
+                f"/repos/{repo}/pulls/{pr_number}/reviews",
+                extra=("-f", "per_page=100"),
+                paginate=True,
+            )
+        except Exception:
+            rv_payload = []
+        if isinstance(rv_payload, list):
+            reviews = _filter_reviews(
+                cast("list[Any]", rv_payload), exclude_login=exclude_login
+            )
+        return {
+            "review_comments": review_comments,
+            "issue_comments": issue_comments,
+            "pull_request_reviews": reviews,
+        }
+
     async def _discover_existing_review(
         self,
         repo: str,
@@ -429,6 +506,48 @@ class GhCli:
 
 
 # ── Module helpers ────────────────────────────────────────────────────────
+
+
+def _filter_actors(
+    payload: list[Any], *, exclude_login: str
+) -> list[dict[str, Any]]:
+    """Return only dict-shaped entries whose `user.login` differs from
+    `exclude_login` (or all entries when exclude is empty).
+
+    Used by `list_all_pr_comments` to drop the bot's own comments from
+    the cross-actor dedup view — the bot already gets its own prior
+    reviews via `list_prior_reviews_with_comments`.
+    """
+    out: list[dict[str, Any]] = []
+    for raw in payload:
+        if not isinstance(raw, dict):
+            continue
+        if exclude_login:
+            user = raw.get("user")
+            if isinstance(user, dict) and user.get("login") == exclude_login:
+                continue
+        out.append(cast("dict[str, Any]", raw))
+    return out
+
+
+def _filter_reviews(
+    payload: list[Any], *, exclude_login: str
+) -> list[dict[str, Any]]:
+    """Same as `_filter_actors` but drops unsubmitted reviews
+    (pending = `submitted_at` is missing or null/empty)."""
+    out: list[dict[str, Any]] = []
+    for raw in payload:
+        if not isinstance(raw, dict):
+            continue
+        if exclude_login:
+            user = raw.get("user")
+            if isinstance(user, dict) and user.get("login") == exclude_login:
+                continue
+        submitted = raw.get("submitted_at")
+        if submitted in (None, ""):
+            continue
+        out.append(cast("dict[str, Any]", raw))
+    return out
 
 
 def _safe_decode(b: bytes) -> str:

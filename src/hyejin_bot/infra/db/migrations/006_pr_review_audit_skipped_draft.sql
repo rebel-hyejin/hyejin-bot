@@ -3,7 +3,11 @@
 -- 'skipped_draft'. Draft PRs are deferred until the operator marks them
 -- ready_for_review; the handler's _gate_draft writes this status.
 -- Same 12-step CHECK-constraint replacement pattern as migration 004.
-PRAGMA foreign_keys = ON;
+-- Unlike 004 we may run against a populated DB (outbox + events have rows
+-- referencing pr_review_audit indirectly), so disable FK checks for the
+-- duration of the rename-recreate-copy dance per SQLite docs §7. Re-enable
+-- once the new table is in place; the deferred check at COMMIT validates.
+PRAGMA foreign_keys = OFF;
 
 ALTER TABLE pr_review_audit RENAME TO pr_review_audit__old;
 
@@ -44,3 +48,5 @@ CREATE INDEX IF NOT EXISTS idx_pra_repo_pr_sha
 CREATE INDEX IF NOT EXISTS idx_pra_event ON pr_review_audit(event_id);
 
 UPDATE meta SET value = '6' WHERE key = 'schema_version';
+
+PRAGMA foreign_keys = ON;

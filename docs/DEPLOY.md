@@ -109,8 +109,10 @@ Edit `config.toml`. The defaults work for most boxes, but verify:
 | Key | What it controls | Action |
 |---|---|---|
 | `[runtime].state_dir` | Where state.db / pidfile / heartbeat / backups live. | Default `~/.hyejin-bot`. Change only if `~` is networked / slow / shared. |
-| `[secrets].provider` | `keychain` (Mac) \| `file` (Linux) \| `env` (dev only). | Set per OS. |
-| `[secrets].file_path` | Linux only: path to the 0600 credential file. | Default `/etc/hyejin-bot/oauth_token`; you'll likely want `~/.config/hyejin-bot/oauth_token` so you don't need root. Update both this **and** the path you'll pass to `install-linux.sh` so they match. |
+| `[secrets].provider` | `vault` (server, Recommended) \| `keychain` (Mac dev) \| `file` \| `env` (dev only). | Set per OS. |
+| `[secrets].keychain_account` | Mac-only: Keychain account name for the Anthropic key. | Default `claude_api_key`. |
+| `[secrets].file_path` | Linux `file` provider: path to the 0600 credential file. | Default `/etc/hyejin-bot/claude_api_key`. Only used when `provider="file"`; the Vault path is the prod choice. |
+| `[secrets].vault_*` | Vault AppRole + KV settings. | See `config.example.toml` `[secrets]` block. Defaults wire to `secret/bots/hyejin-bot` via `~/bots/.vault/hyejin-bot.{role,secret}_id`. |
 | `[claude].model` | Which model the daemon calls. | Leave at `claude-opus-4-7` unless you have a reason. |
 | `[github].username` | Operator's GitHub login. | Set explicitly (avoids a network roundtrip at boot). Find with `gh api user -q .login`. |
 | `[handlers.pr_review].enabled` | Master switch for PR review. | `true` to ship. `false` if you want to deploy the daemon first and enable later. |
@@ -126,43 +128,104 @@ private repo if you want versioned configs across machines.
 
 ---
 
-## 3. OAuth token — minting and storing
+## 3. Secrets — Vault provider (production) or Keychain (Mac dev)
 
-The daemon never reads your shell environment for this token. It pulls
-from the OS keystore at boot.
+The daemon never reads its shell environment for the Anthropic key or
+ancillary secrets (GH_TOKEN, SLACK_BOT_TOKEN, JIRA_*, SSW_AUTOMATION_PASSWORD).
+It pulls from the configured `secrets.provider` at boot:
 
-### 3.1 Mint the token (any machine with Claude Code CLI)
+- **Linux server** → `vault` (HashiCorp Vault AppRole + KV v2). Used in
+  the production VM rollout — `secret/bots/hyejin-bot` holds every key
+  the daemon needs in one path.
+- **Mac dev** → `keychain` (the macOS login keychain) is OK when you
+  don't want to provision Vault credentials for a one-machine install.
+- **`file`** (0600 file on disk) and **`env`** remain available but
+  are not recommended for hyejin-bot — Vault wins on rotation hygiene.
 
-```bash
-claude setup-token
+The Anthropic auth itself is the **Claude Code org-OAuth credentials
+file** (`~/.claude/.credentials.json`), not an API key. The persona's
+prompts run through the bundled `claude` CLI, which finds those
+credentials via `$HOME` automatically. The Vault key
+`ANTHROPIC_API_KEY` is optional — leave it empty and the daemon uses
+the credentials file instead (see `infra/claude.py:RealClaudeSession`).
+
+### 3.1 Vault path layout (server)
+
+```text
+secret/bots/hyejin-bot                     # KV v2, owned by hyejin-bot-ro policy
+  ├── ANTHROPIC_API_KEY = ""               # empty → OAuth credentials path
+  ├── GH_TOKEN          = ghp_…            # fine-grained PAT, rebellions-sw scope
+  ├── GH_USER           = rebel-hyejin
+  ├── REPO              = rebellions-sw/ssw-bundle
+  ├── SLACK_BOT_TOKEN   = xoxb-…           # for LGTM-eligible DM
+  └── SLACK_CHANNEL     = D08GP012483      # operator DM id
 ```
 
-Follow the browser flow. The CLI prints a token starting with `sk-ant-oat…`.
-**Copy it once** — you cannot view it again.
+Vault policy `hyejin-bot-ro` covers read on the KV path + token
+self-revoke (`scripts/bootstrap-vault-approle.sh` documents the
+admin-side bootstrap).
 
-### 3.2.a Mac — store in Keychain
+### 3.2 AppRole credentials (server)
 
-```bash
-just setup-token
-# Prompts: paste the token. The script replaces any existing entry.
-# Verify:
-security find-generic-password -s hyejin-bot -a oauth_token -w
+`scripts/install-linux.sh` refuses to install without two 0600 files:
+
+```text
+~/bots/.vault/hyejin-bot.role_id
+~/bots/.vault/hyejin-bot.secret_id
 ```
 
-### 3.2.b Linux — write a 0600 file
+Mint them with the helper:
 
 ```bash
-mkdir -p ~/.config/hyejin-bot
-umask 077
-printf '%s' '<paste-token-here>' > ~/.config/hyejin-bot/oauth_token
-chmod 600 ~/.config/hyejin-bot/oauth_token
-ls -l ~/.config/hyejin-bot/oauth_token   # mode must be -rw-------
+./scripts/bootstrap-vault-approle.sh           # writes both files with chmod 600
+ls -la ~/bots/.vault/
 ```
 
-The `install-linux.sh` script refuses to install if the file isn't 0600.
-Match the path you used here with `[secrets].file_path` in `config.toml`.
+Pre-flight (`bootstrap-vault-approle.sh`):
+- requires `vault login` already done on the operator's session,
+- pulls the `role_id` (constant per role) and a fresh `secret_id`,
+- never echoes either secret to the terminal.
 
-> **Never** put the token in `.env`, in `git`, or in
+`config.toml` already points at this layout — see the `[secrets]`
+block in `config.example.toml` for the exact field names
+(`vault_role_id_path`, `vault_secret_id_path`, …).
+
+### 3.3 OAuth credentials for the persona (server)
+
+Copy your Mac Keychain `Claude Code-credentials` blob (~470 bytes JSON
+with `claudeAiOauth.{accessToken, refreshToken, expiresAt, scopes,
+subscriptionType, rateLimitTier}`) to the VM:
+
+```bash
+# On Mac:
+security find-generic-password -s "Claude Code-credentials" -w \
+    > /tmp/creds.json && chmod 600 /tmp/creds.json
+scp /tmp/creds.json hyejin-vm:~/.claude/.credentials.json
+ssh hyejin-vm 'chmod 600 ~/.claude/.credentials.json; rm -f /tmp/creds.json'
+rm -f /tmp/creds.json
+```
+
+The CLI refreshes the access token in-place when it expires (refreshToken
+must be present — first install often ships with an empty refreshToken
+which leads to a 24h-later 401; re-copy from Keychain to refill).
+
+### 3.4 Mac (dev) — Keychain fallback
+
+If you're running a single dev daemon on Mac and don't want to
+provision Vault credentials just for that:
+
+```bash
+just setup-token            # script prompts for the Anthropic API key
+                            # and stores it under (hyejin-bot, claude_api_key).
+security find-generic-password -s hyejin-bot -a claude_api_key -w
+```
+
+The Mac install reads `config.toml`'s `[secrets].provider = "keychain"`
++ `keychain_account = "claude_api_key"`. Same set of named secrets
+(GH_TOKEN, SLACK_BOT_TOKEN, …) goes into the Keychain under the same
+service name but with their own account names.
+
+> **Never** put any of these in `.env`, in `git`, or in
 > `EnvironmentVariables` of the launchd plist. The daemon scrubs known
 > token shapes from logs but the redaction processor only protects what
 > happens to land in structlog — environment variables can leak via
@@ -313,23 +376,30 @@ script unloads the old plist before loading the new one.
 ### 8.2 Linux — systemd user unit
 
 ```bash
-just install-linux ~/.config/hyejin-bot/oauth_token
+bash scripts/install-linux.sh           # no args — secrets come from Vault
 systemctl --user status hyejin-bot
 journalctl --user -u hyejin-bot -f
 ```
+
+Pre-flight (script):
+- `~/bots/.vault/hyejin-bot.{role_id,secret_id}` exist with mode 0600
+  (from `scripts/bootstrap-vault-approle.sh`),
+- `config.toml` exists in the repo root,
+- `~/.hyejin-bot/` exists with mode 0700 (created by the script).
 
 The unit is `Type=notify` with `WatchdogSec=120` — our heartbeat task
 calls `sd_notify(WATCHDOG=1)` every tick. If the daemon hangs, systemd
 SIGKILLs and restarts. `RestartPreventExitStatus=78` blocks restart on
 `AuthError`.
 
-`LoadCredential=oauth_token:<path>` copies the 0600 file into a unit
-credential store at boot, so the path the daemon reads is reproducible
-(`$CREDENTIALS_DIRECTORY/oauth_token`). The original file path doesn't
-change after install.
+No `LoadCredential` — the daemon reads its Anthropic credentials from
+`$HOME/.claude/.credentials.json` (org-OAuth, copied in §3.3) and pulls
+GH/Slack/Jira tokens from Vault at boot via AppRole. `ProtectHome=read-only`
+on the unit still allows the daemon to read those files in-process; only
+the state dir is writable.
 
-To re-install after a config change: `just install-linux <credential>`
-again. Daemon-reload + restart happens automatically.
+To re-install after a config change: `bash scripts/install-linux.sh` again.
+Daemon-reload + restart happens automatically.
 
 If the unit only runs when you're logged in, you forgot
 `loginctl enable-linger`. Re-run that and reboot.
@@ -422,9 +492,13 @@ the operator-facing summary.
 | `[ratelimit]` | `claude_call_capacity` | `60.0` | Burst budget for the active token bucket. |
 | `[ratelimit]` | `claude_call_refill_per_sec` | `1.0` | Steady-state refill rate (tokens / second). |
 | `[ratelimit.defaults]` | `global_per_hour` / `global_per_day` / `handler_per_hour` | `30` / `200` / `10` | Legacy aggregate caps; retained for forward compat. The active gate is `[ratelimit]` above. |
-| `[secrets]` | `provider` | `keychain` | `keychain` \| `file` \| `env`. |
-| `[secrets]` | `keychain_service` / `_account` | `hyejin-bot` / `oauth_token` | Keychain coords. |
-| `[secrets]` | `file_path` | `/etc/hyejin-bot/oauth_token` | Linux 0600 file path. |
+| `[secrets]` | `provider` | `keychain` | `vault` (prod) \| `keychain` (Mac dev) \| `file` \| `env`. |
+| `[secrets]` | `keychain_service` / `_account` | `hyejin-bot` / `claude_api_key` | Keychain coords (Mac dev). |
+| `[secrets]` | `file_path` | `/etc/hyejin-bot/claude_api_key` | Linux 0600 file path (`file` provider). |
+| `[secrets]` | `vault_addr` | `https://vault.ssw.rbln.in` | Vault server (`vault` provider). |
+| `[secrets]` | `vault_kv_path` | `bots/hyejin-bot` | KV v2 path holding ANTHROPIC_API_KEY / GH_TOKEN / SLACK_BOT_TOKEN. |
+| `[secrets]` | `vault_role_id_path` / `vault_secret_id_path` | `~/bots/.vault/hyejin-bot.{role_id,secret_id}` | 0600 files written by `bootstrap-vault-approle.sh`. |
+| `[slack]` | `enabled` / `channel` | `false` / _(empty)_ | LGTM-eligible DM side channel. Set both to opt in. |
 | `[claude]` | `model` | `claude-opus-4-7` | Model the SDK uses. |
 | `[claude]` | `default_system_prompt` | `"You are…"` | Used if a handler doesn't override. |
 | `[github]` | `username` | _(empty)_ | Resolved at boot if blank. |
@@ -460,7 +534,7 @@ just migrate                             # apply any new migrations
 just install-mac                         # reloads the plist
 
 # Linux
-just install-linux ~/.config/hyejin-bot/oauth_token
+bash scripts/install-linux.sh
 systemctl --user restart hyejin-bot
 journalctl --user -u hyejin-bot -f
 ```
@@ -478,7 +552,8 @@ deployment checkout you don't push from).
 ```bash
 launchctl unload ~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist
 rm ~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist
-security delete-generic-password -s hyejin-bot -a oauth_token
+security delete-generic-password -s hyejin-bot -a claude_api_key
+# (and one per named secret you stored — gh_token, slack_bot_token, etc.)
 rm -rf ~/.hyejin-bot                     # only if you really want to drop state
 ```
 
@@ -488,13 +563,16 @@ rm -rf ~/.hyejin-bot                     # only if you really want to drop state
 systemctl --user disable --now hyejin-bot
 rm ~/.config/systemd/user/hyejin-bot.service
 systemctl --user daemon-reload
-shred -u ~/.config/hyejin-bot/oauth_token   # or rm if shred is unavailable
+shred -u ~/bots/.vault/hyejin-bot.role_id ~/bots/.vault/hyejin-bot.secret_id
+shred -u ~/.claude/.credentials.json
 rm -rf ~/.hyejin-bot                         # only if you really want to drop state
 ```
 
-You may also want to revoke the OAuth token at `claude.com/settings`
-and the GitHub PAT at `github.com/settings/tokens` if this host is being
-decommissioned.
+You may also want to (a) revoke the Vault AppRole secret_id
+(`vault write -f auth/approle/role/hyejin-bot/secret-id-accessor/destroy`),
+(b) revoke the GitHub PAT at `github.com/settings/tokens`, and
+(c) sign out the OAuth subscription at `claude.com/settings` if this
+host is being permanently decommissioned.
 
 ---
 

@@ -66,12 +66,12 @@ outpacing refill — bump `[ratelimit].claude_call_refill_per_sec` in
 
 | Concern              | macOS (launchd)                                   | Linux (systemd --user)                          |
 |----------------------|---------------------------------------------------|-------------------------------------------------|
-| Install              | `just install-mac`                                | `just install-linux <oauth-credential-file>`    |
+| Install              | `just install-mac`                                | `bash scripts/install-linux.sh` (no args)       |
 | Unit / plist         | `~/Library/LaunchAgents/ai.rebellions.hyejin-bot.plist` | `~/.config/systemd/user/hyejin-bot.service` |
 | Auto-restart         | `KeepAlive=true`, `ThrottleInterval=10`           | `Restart=on-failure`, `RestartSec=10`           |
 | Stop on AuthError    | `RestartPreventExitStatus=78` (via wrapper)       | `RestartPreventExitStatus=78`                   |
 | Watchdog             | `ops doctor` cron / heartbeat self-alert log      | `WatchdogSec=120` + sd_notify                   |
-| Token storage        | macOS Keychain (`security add-generic-password`)  | `0600` file under `~/.config/`, `LoadCredential=` |
+| Secret storage       | macOS Keychain (`hyejin-bot/claude_api_key`)      | Vault AppRole + KV (`secret/bots/hyejin-bot`) + `~/.claude/.credentials.json` for OAuth |
 | Logs                 | `StandardOutPath` / `StandardErrorPath` files     | `journalctl --user -u hyejin-bot`              |
 | Bootstrap token      | `just setup-token` (Keychain prompt)              | Manual: write file with `umask 077`             |
 | Manual restart       | `launchctl kickstart -k gui/<uid>/ai.rebellions.hyejin-bot` | `systemctl --user restart hyejin-bot`  |
@@ -142,50 +142,74 @@ Exit codes that matter:
 
 ---
 
-### 3.2 OAuth token revoked / `AuthError` restart loop
+### 3.2 Claude auth failure / `AuthError` restart loop
 
 **Symptoms**
-- `ops doctor` `token` check is `fail` (`unavailable`).
+- `ops doctor` `claude_api_key` check is `fail` (`unavailable`).
 - Daemon exits with code **78**; supervisor refuses to restart
   (`RestartPreventExitStatus=78`).
 - Logs show `AuthError: claude auth failure: …` or `401/403/unauthorized`
   responses from the Claude SDK.
 
-**Recovery**
-1. **Verify the failure mode** before rotating anything.
+**Recovery — pick the path matching your auth mode**
+
+#### A. Server (Vault provider + OAuth credentials file)
+
+This is the production path. Two layer scenarios overlap here — Vault
+AppRole and the `~/.claude/.credentials.json` blob. Symptoms split:
+
+| `journal --user -u hyejin-bot` says | Layer at fault |
+|---|---|
+| `vault: approle login http 403` | AppRole secret_id expired/revoked. |
+| `vault: field 'ANTHROPIC_API_KEY' missing from KV payload` (and you intended to use API key) | KV mismatch. |
+| `Invalid API key · Fix external API key` from the CLI | OAuth credentials file expired or `refreshToken` is empty. |
+
+1. **AppRole secret_id rotated** — re-mint on the operator's laptop and
+   ship to the VM. The role_id is stable; only secret_id needs rotation.
    ```bash
-   just doctor                          # token: fail / unavailable?
+   # On the operator's laptop with `vault login` already done
+   ./scripts/bootstrap-vault-approle.sh           # writes both files
+   scp ~/bots/.vault/hyejin-bot.{role_id,secret_id} hyejin-vm:~/bots/.vault/
+   ssh hyejin-vm 'chmod 600 ~/bots/.vault/hyejin-bot.{role_id,secret_id}'
    ```
-2. **Issue a fresh token** through the Claude CLI on the operator's laptop:
+2. **OAuth credentials file expired** — re-copy from the operator's Mac
+   Keychain (the source of truth for the org-OAuth subscription).
    ```bash
-   claude setup-token                   # opens browser, prints token
+   # On Mac
+   security find-generic-password -s "Claude Code-credentials" -w \
+       > /tmp/creds.json && chmod 600 /tmp/creds.json
+   scp /tmp/creds.json hyejin-vm:~/.claude/.credentials.json
+   ssh hyejin-vm 'chmod 600 ~/.claude/.credentials.json'
+   rm -f /tmp/creds.json
    ```
-3. **Store the new token in the right provider.**
-   - **macOS — one-shot rotate:** `just rotate-token` prompts for the new
-     token, writes it to Keychain, kicks the launchd agent, and (on
-     restart failure) rolls Keychain back to the previous token. Skip
-     step 4's macOS branch if you used this path.
-     ```bash
-     just rotate-token                  # store + restart with rollback
-     ```
-   - **macOS — initial install (no running agent yet):**
-     ```bash
-     just setup-token                   # prompts, writes to Keychain
-     ```
-   - **Linux:** write the credential file with `umask 077` and re-run the
-     installer so systemd's `LoadCredential=` picks it up.
-     ```bash
-     umask 077
-     printf '%s' "<token>" > ~/.config/hyejin-bot/oauth_token
-     just install-linux ~/.config/hyejin-bot/oauth_token
-     ```
-4. **Verify and restart.**
+   ⚠️ If the keychain blob's `refreshToken` is empty (happens after a
+   first install), an expired access token has no path forward — open
+   `claude` on a Mac (any auth-bearing window) and re-extract; the new
+   blob will carry a refreshToken so the next expiry self-heals.
+
+3. **Verify and restart.**
    ```bash
-   just doctor                          # token: ok, len>0
-   # macOS — only if you used `just setup-token` (not `just rotate-token`).
+   ssh hyejin-vm 'uv run hyejin-bot ops doctor --config config.toml'
+   ssh hyejin-vm 'systemctl --user restart hyejin-bot.service'
+   ssh hyejin-vm 'journalctl --user -u hyejin-bot -f'
+
+#### B. Mac dev (Keychain provider)
+
+1. **Re-mint an Anthropic API key** at
+   https://console.anthropic.com/settings/keys (or rotate the OAuth
+   token with `claude setup-token` if you use Keychain to hold an
+   OAuth credentials blob).
+2. **macOS — one-shot rotate:** `just rotate-token` prompts for the new
+   key, writes it to Keychain (`hyejin-bot/claude_api_key`), kicks the
+   launchd agent, and (on restart failure) rolls Keychain back to the
+   previous value.
+   ```bash
+   just rotate-token
+   ```
+3. **Verify and restart.**
+   ```bash
+   just doctor                          # claude_api_key: ok
    launchctl kickstart -k gui/$(id -u)/ai.rebellions.hyejin-bot
-   # Linux
-   systemctl --user restart hyejin-bot
    just status
    ```
 5. **Confirm the daemon makes a real Claude call.**

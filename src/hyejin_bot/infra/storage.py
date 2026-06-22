@@ -83,22 +83,36 @@ async def apply_migrations(conn: aiosqlite.Connection) -> int:
 
     Each migration runs inside its own transaction. Returns the schema_version
     after the run.
+
+    SQLite ignores `PRAGMA foreign_keys` toggling **inside** a transaction, so
+    migrations that need FK checks off for the rename-recreate dance (e.g. the
+    `ALTER TABLE ... RENAME TO ..._old` step in 004/006) must have FKs disabled
+    by the caller before opening the transaction. We toggle here so individual
+    migrations don't have to fight the connection-level pragma state.
     """
     migrations = migration_files()
     if not migrations:
         return await _current_schema_version(conn)
 
     current = await _current_schema_version(conn)
-    for seq, _name, sql in migrations:
-        if seq <= current:
-            continue
-        await conn.executescript("BEGIN;\n" + sql + "\nCOMMIT;")
-        await conn.execute(
-            "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
-            (str(seq),),
-        )
-        await conn.commit()
-        current = seq
+    # See docstring — FK checks must be off across the executescript() to allow
+    # table rename/recreate patterns to land. The CHECK constraint extension is
+    # the validating end-state; outbox/events FK targets are preserved by the
+    # INSERT-from-old copy inside each migration.
+    await conn.execute("PRAGMA foreign_keys = OFF;")
+    try:
+        for seq, _name, sql in migrations:
+            if seq <= current:
+                continue
+            await conn.executescript("BEGIN;\n" + sql + "\nCOMMIT;")
+            await conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
+                (str(seq),),
+            )
+            await conn.commit()
+            current = seq
+    finally:
+        await conn.execute("PRAGMA foreign_keys = ON;")
     return current
 
 

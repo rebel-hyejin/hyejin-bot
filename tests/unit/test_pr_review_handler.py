@@ -974,8 +974,11 @@ async def test_pause_guard_short_circuits_before_post(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_verdict_approve_emits_gh_approve_event(tmp_path: Path) -> None:
-    """`verdict=APPROVE` with empty `comments[]` posts a GitHub APPROVE review."""
+async def test_verdict_approve_still_posts_comment_event(tmp_path: Path) -> None:
+    """hyejin-bot policy: even `verdict=APPROVE` posts a GitHub COMMENT review,
+    not APPROVE. The operator wants to manually verify before any GitHub-side
+    merge gate clicks. The persona's APPROVE verdict still triggers the LGTM
+    GIF in the body — same surprise-and-delight, just no APPROVE event."""
     fake_gh = FakeGh()
     fake_gh.add_pr("o/r", 7, head_sha="deadbeef", author="alice", files=_FILES_ONE_FILE)
     factory = FakeFactory(
@@ -1001,8 +1004,11 @@ async def test_verdict_approve_emits_gh_approve_event(tmp_path: Path) -> None:
         assert isinstance(result, Ack)
         posted = fake_gh.posted_reviews()
         assert len(posted) == 1
-        assert posted[0]["event"] == "APPROVE"
+        # hyejin-bot policy: APPROVE → COMMENT (never the GH APPROVE event).
+        assert posted[0]["event"] == "COMMENT"
         assert posted[0]["comments"] == []
+        # The LGTM GIF still rides along on an APPROVE-verdict body.
+        assert "media.giphy.com" in posted[0]["body"]
     finally:
         await conn.close()
 
@@ -1077,7 +1083,8 @@ async def test_approve_embeds_lgtm_gif_above_signoff(tmp_path: Path) -> None:
         assert isinstance(result, Ack)
         posted = fake_gh.posted_reviews()
         assert len(posted) == 1
-        assert posted[0]["event"] == "APPROVE"
+        # hyejin-bot policy: GH event is COMMENT even for APPROVE verdict.
+        assert posted[0]["event"] == "COMMENT"
         body = posted[0]["body"]
         assert "![LGTM: " in body
         assert "https://media.giphy.com/media/" in body

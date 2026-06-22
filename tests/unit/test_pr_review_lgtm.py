@@ -13,7 +13,10 @@ def test_pick_returns_markdown_image_with_giphy_url() -> None:
     out = pick_lgtm_gif("deadbeef")
     assert out.startswith("![LGTM: ")
     assert "](https://media.giphy.com/media/" in out
-    assert out.endswith("/giphy.gif)")
+    # Caption follows on a separate italicized line.
+    lines = out.split("\n")
+    assert lines[0].endswith("/giphy.gif)")
+    assert lines[-1].startswith("_") and lines[-1].endswith("_")
 
 
 def test_pick_is_deterministic_per_seed() -> None:
@@ -46,6 +49,13 @@ def test_seed_index_empty_list() -> None:
 
 
 def test_all_gifs_produce_valid_urls() -> None:
-    for slug, gif_id in _LGTM_GIFS:
-        assert slug and gif_id
+    for slug, gif_id, caption in _LGTM_GIFS:
+        assert slug and gif_id and caption
         assert " " not in gif_id
+
+
+def test_caption_is_korean_one_line() -> None:
+    """Each caption is a short Korean reaction — single line, ends with period."""
+    for _slug, _gif_id, caption in _LGTM_GIFS:
+        assert "\n" not in caption
+        assert caption.endswith(".")

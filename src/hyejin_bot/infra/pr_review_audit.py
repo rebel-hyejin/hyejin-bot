@@ -23,6 +23,7 @@ AuditStatus = Literal[
     "skipped_too_large",
     "skipped_already_reviewed",
     "skipped_disallowed_repo",
+    "skipped_draft",
     "failed",
 ]
 

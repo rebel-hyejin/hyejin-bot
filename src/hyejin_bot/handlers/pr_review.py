@@ -155,6 +155,10 @@ class PrReviewHandler:
         if early is not None:
             return early
 
+        early = await self._gate_draft(prep, now)
+        if early is not None:
+            return early
+
         sized = await self._fetch_files(prep)
         early = await self._gate_size_budget(sized, now)
         if early is not None:
@@ -271,6 +275,7 @@ class PrReviewHandler:
             author_login=_read_author(pr),
             requested_logins=_read_requested_logins(pr),
             pr_state=str(pr.get("state", "open")),
+            is_draft=bool(pr.get("draft", False)),
             audit_kwargs={
                 "event_id": event.id,
                 "repo": parsed.repo,
@@ -329,6 +334,32 @@ class PrReviewHandler:
             pr_number=prep.pr_number,
             head_sha=prep.head_sha,
             state=prep.pr_state,
+        )
+        return Ack()
+
+    async def _gate_draft(self, prep: _PrepState, now: datetime) -> HandlerResult | None:
+        """Skip draft PRs — review only once the operator marks the PR Ready.
+
+        Manual fires (`dev fire-pr-review` / `pr.review.manual`) bypass this gate so
+        the operator can dry-run a review on a draft when they explicitly ask.
+        Auto-trigger flow (`gh.review_requested`) always honors draft status —
+        review-requested on a draft is unusual but possible, and we still defer.
+        """
+        if not prep.is_draft:
+            return None
+        if prep.is_manual:
+            return None
+        await self._write_audit(
+            **prep.audit_kwargs,
+            status="skipped_draft",
+            error="pr.draft=true — defer until ready_for_review",
+            created_at=now,
+        )
+        _log.info(
+            "pr_review.skipped_draft",
+            repo=prep.repo,
+            pr_number=prep.pr_number,
+            head_sha=prep.head_sha,
         )
         return Ack()
 
@@ -424,20 +455,20 @@ class PrReviewHandler:
             )
             summary = header + "\n\n" + summary
 
-        # APPROVE → GH APPROVE event (counts toward branch protection);
-        # everything else → COMMENT. The schema validator already enforces
-        # `verdict=APPROVE ⇔ comments==[]`, so we trust the verdict field.
-        # Self-authored PRs (review_self) can never APPROVE — GitHub rejects a
-        # self-approval (HTTP 422) — so an APPROVE verdict is downgraded to a
-        # COMMENT review carrying the same (empty-comments) summary body.
-        is_self = sized.author_login == self.github_username
-        gh_event = "APPROVE" if (review.verdict == "APPROVE" and not is_self) else "COMMENT"
-        # House style: a real APPROVE earns a celebratory LGTM GIF in the
-        # Summary (operator preference). Only on the posted APPROVE event —
-        # COMMENT/REQUEST_CHANGES (incl. self-PRs downgraded to COMMENT) stay
-        # text-only. Inserted above the sign-off and after redaction; the GIF
-        # URL is a vetted constant so it can't trip the redaction guard.
-        if gh_event == "APPROVE":
+        # hyejin-bot policy: NEVER post a GitHub APPROVE event. The persona
+        # may still emit verdict=APPROVE (equivalent to "LGTM-eligible"),
+        # but the operator (hyejin) wants to manually verify before any
+        # APPROVE counts toward branch protection. We always send COMMENT
+        # to GitHub and let the persona body carry the LGTM signal.
+        gh_event = "COMMENT"
+        # The cat LGTM GIF still rides along when the persona signals
+        # APPROVE — same surprise-and-delight, just without a GitHub-side
+        # merge gate. The persona is responsible for only emitting that
+        # verdict when its trait-#10 four-part gate is satisfied
+        # (MAJOR/CRITICAL = 0, verification evidence present, Robot test
+        # citation if applicable, meaningful Positive).
+        wants_lgtm = review.verdict == "APPROVE"
+        if wants_lgtm:
             summary = _insert_above_signoff(summary, pick_lgtm_gif(sized.head_sha))
         summary = _normalize_signoff(summary)
         posted = await self.gh.post_review(
@@ -564,6 +595,7 @@ class _PrepState:
     author_login: str
     requested_logins: tuple[str, ...]
     pr_state: str
+    is_draft: bool
     audit_kwargs: dict[str, Any]
     now: datetime
 

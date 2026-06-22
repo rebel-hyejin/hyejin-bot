@@ -208,3 +208,68 @@ Verdict 옵션:
 | **Senior DBA** | schema migration safety, index/lock, query plan, data backfill |
 
 Role을 받으면 그 row의 차원을 Findings 표 정렬에서도 위로 끌어올린다. 다른 차원도 여전히 본다 — 무게중심만 이동.
+
+---
+
+## Dedup Mode (Rule 9) {#dedup-mode}
+
+PR에 이미 올라와 있는 코멘트와 finding이 의미 중복일 때의 출력 명세. SKILL.md Rule 9 / Hard rule / Workflow §5 의 출력 contract.
+
+### Match criteria (모두 충족 시 dedup)
+
+| 기준 | 정의 |
+|---|---|
+| **C1. 룰 ID 일치** | 같은 카탈로그 룰 ID (예: 둘 다 `[G50]`) **또는** 같은 file path + same Clean Code chapter |
+| **C2. 위치 근접** | `file:line` ±5 lines |
+| **C3. Thread 상태** | open / unresolved 상태 (resolved/outdated/collapsed thread는 dedup 대상 아님 — 회귀 가능성) |
+
+C1·C2·C3 모두 충족하지 않으면 dedup 하지 말고 새 finding으로 정상 발행.
+
+### 출력 분기 (CONFIRM vs REFINE)
+
+| 케이스 | 어떤 reply | 본문 |
+|---|---|---|
+| Finding이 기존 코멘트와 동일 결론·동일 root cause | `[CONFIRM]` | 한 줄 동의 + (옵션) 한 줄 보강 사실. 예: `[CONFIRM] 동의. 같은 룰 [G50] — guard 4중첩 패턴.` |
+| Finding이 같은 root cause인데 missing context (인접 라인·convention §·실측 evidence) 추가할 게 있음 | `[REFINE]` | 한 줄 추가 정보. 예: `[REFINE] 같은 패턴이 inv/test_pipeline/test_pipeline.py:850에도 있음.` |
+
+Reply 본문은 **한 줄**. 별도 Verdict / 표 / sign-off 없음 (sign-off는 main review body의 마지막에만).
+
+### Main review body 표기
+
+dedup된 finding은 Findings 표에 row를 적지 않는다. 그 대신 개요(섹션 끝부분) 마지막 줄에:
+
+```
+Co-signed: <thread-url-1> ×1, <thread-url-2> ×1
+```
+
+또는 같은 thread에 여러 finding이 dedup되면:
+
+```
+Co-signed: <thread-url-1> ×3
+```
+
+`×N` 의 N은 dedup된 finding 수 (×1이면 생략 가능).
+
+### Caller contract (운영 측 책임)
+
+- **현재 운영 한계**: handler는 `gh.list_prior_reviews_with_comments(login=self.github_username)` 로 자기 이전 리뷰만 fetch. 인간 reviewer · Copilot · daeyeon-bot 코멘트 dedup은 handler가 다음 3-tuple을 모두 fetch하도록 확장된 후 가능:
+  - `GET /repos/{owner}/{repo}/pulls/{n}/comments` — review_comments (file:line-bound, dedup 주 대상)
+  - `GET /repos/{owner}/{repo}/issues/{n}/comments` — issue_comments (PR 본문에 달린 비-인라인 코멘트, dedup은 content similarity로만)
+  - `GET /repos/{owner}/{repo}/pulls/{n}/reviews` — pull_request_reviews (review body 자체)
+- **Persona 책임**: dedup 판정 + `[CONFIRM]`/`[REFINE]` reply 본문 + `Co-signed:` 라인 생성.
+- **Caller 책임**: thread URL을 review_comments API `in_reply_to_id` 로 변환 후 reply 발행. main review body는 `gh api ...reviews POST` 로 정상 발행.
+
+### Example — main body with dedup
+
+```
+**Verdict**: CONCERNS — `inv/test_pipeline/test_pipeline.py:850` AND-분배 OR-단일토큰 시뮬레이션 누락.
+
+개요. dryrun 시 `_compose_include`의 의미가 production filter와 다르다는 점이 PR description에 언급되지 않았다. 신규 룰은 daily/weekly profile 모두 영향. Resolved (1), Still open (1).
+Co-signed: https://github.com/rebellions-sw/ssw-bundle/pull/3927#discussion_r4541170001 ×1
+
+| # | Severity | File:Line | Rule | 설명 |
+|---|---|---|---|---|
+| 1 | MAJOR | inv/test_pipeline/test_pipeline.py:847 | [D22] | `_compose_include` 동작이 dryrun과 다름. `docs/conventions/invoke.md §3` 직접 인용 누락. |
+
+— hyejin-bot 🐱✨
+```

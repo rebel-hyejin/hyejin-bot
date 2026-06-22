@@ -41,6 +41,7 @@ PR-bound 출력의 표준 형태. **본문 산문은 한국어**, 라벨·룰 ID
 - **개요 단락이 본문의 절반 이상**이어야 한다. Findings 표가 본문을 점령하면 슬림화 실패 — finding 산문은 inline으로 옮겨라.
 - 허용 섹션만: (옵션) Reviewer 라인, Verdict 라인, 개요, Findings 표(N≤6 평면 표 / N>6 `<details open>` 로 감싸기), Positive(0–2 bullets, 없으면 생략), sign-off.
 - **금지**: Detail 산문(`### N. [SEV] ...`), 코드 펜스, 멀티문장 표 셀.
+- **Body invariant**: sign-off (`— hyejin-bot 🐱✨`) **이후로는 어떤 산문도 오지 않는다**. Positive 다음 줄에 `— hyejin-bot 🐱✨`, 그게 본문의 마지막 non-empty 라인. 그 뒤에 `- [filename near LN] [MAJOR] ...` 같은 패턴이 보이면 InlineComment가 잘못 본문으로 흘러들어온 구조 오류 — InlineComment는 `comments[]`로만 발행. body markdown 안에 `[SEVERITY] file:line — ...` 형태가 또 나오면 그 finding은 표에서 중복 발행된 것이므로 즉시 제거.
 
 ### Findings 표 분량 처리
 
@@ -134,9 +135,13 @@ except Exception:
 
 규칙:
 - 첫 줄은 항상 `[SEVERITY] file:line — 한국어 한 문장.` 마침표 포함.
+- **bullet dash marker `-` 금지** (inline 코멘트는 다중 bullet 리스트가 아니라 한 finding의 evidence/fix 본체).
+- **filepath 중복 금지** — `[file.sh near L142] [MAJOR] file.sh:142 —` 같은 패턴 X. 한 번만 박는다: `[MAJOR] file.sh:142 —`.
+- **`near` / `around` 모호한 범위 표현 금지** — 정확한 라인 번호만. 다중 라인이면 `file.sh:142-148` 처럼 hyphen range.
 - 한국어 산문 + ASCII 라벨/`file:line`/룰 ID/코드 식별자.
 - 사용자가 영어 출력 명시 요청한 경우에만 영어.
 - 한 inline 안에서 같은 finding의 evidence + fix를 묶는다 — 산문을 본문 표로 다시 보내지 말 것.
+- **InlineComment는 `comments[]` array로만 전달**. 메인 review body (markdown) 에는 절대 인라인 코멘트 산문을 다시 적지 않는다. body는 Verdict + 개요 + Findings 표 (한 줄 설명) + Positive + Sign-off로 끝난다 — 그 사이에 `[MAJOR] file:line — ...` 류 평문이 보이면 구조 오류.
 
 ## Pushback 처리
 

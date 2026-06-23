@@ -13,7 +13,12 @@ _LATEST_SCHEMA_VERSION = 7
 
 @pytest.mark.asyncio
 async def test_migration_005_brings_schema_to_version_5(tmp_path: Path) -> None:
-    """After apply_migrations, schema_version is 5 and both 005 tables exist."""
+    """After apply_migrations, schema_version is current and both 005 tables exist.
+
+    Named for migration 005 historically; asserts the running tip
+    (`_LATEST_SCHEMA_VERSION`, currently 7) and verifies the 005 tables
+    survive later migrations.
+    """
     db_path = tmp_path / "state.db"
     conn = await open_db(db_path)
     try:

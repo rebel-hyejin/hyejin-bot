@@ -166,21 +166,30 @@ async def build(
         secrets_provider=secrets_provider,
     )
 
-    # Feature 003: news handler + cron trigger. Both need the Slack channel;
-    # the handler also needs a fetcher, the trigger only the clock + storage.
+    # Feature 003: news handler. Needs the shared Slack channel + a fetcher.
     news_deps = _build_news_deps(
         config=config,
         overrides=overrides,
         slack_client=slack_client,
         slack_channel=slack_channel,
     )
+
+    # Build the handler registry before the cron trigger so the cron gate can
+    # consult the handlers that ACTUALLY registered. The cron's target handler
+    # is config-driven (`[triggers.cron].handler`), so we can't assume it's
+    # `news` — deriving the wired set from the real registry keeps the gate
+    # correct for any target (e.g. a cron pointing at `echo`).
+    handlers = build_handler_registry(
+        config,
+        pr_review_deps=pr_deps,
+        jira_triage_deps=jira_triage_deps,
+        news_deps=news_deps,
+    )
+
     # The cron trigger fires events at a handler by name; wiring it when that
-    # handler won't be registered would dead-letter every fire as "handler not
-    # registered". Tell `_build_cron_deps` which handlers are actually wired so
-    # it can skip a cron whose target is missing. Today the only cron target is
-    # `news` (built above); extend this set as new cron-driven handlers land.
-    wired_handlers = {"news"} if news_deps is not None else set[str]()
-    cron_deps = _build_cron_deps(config=config, clock=clock, wired_handlers=wired_handlers)
+    # handler isn't registered would dead-letter every fire as "handler not
+    # registered". Gate on the registry's actual contents.
+    cron_deps = _build_cron_deps(config=config, clock=clock, wired_handlers=set(handlers.by_name))
 
     triggers = build_trigger_registry(
         config,
@@ -193,12 +202,7 @@ async def build(
         config=config,
         clock=clock,
         db=db,
-        handlers=build_handler_registry(
-            config,
-            pr_review_deps=pr_deps,
-            jira_triage_deps=jira_triage_deps,
-            news_deps=news_deps,
-        ),
+        handlers=handlers,
         triggers=tuple(triggers),
         claude_session_factory=factory,
         gh=gh,

@@ -38,6 +38,15 @@ def test_cron_deps_skipped_when_target_handler_is_a_different_unwired_name() -> 
     assert deps is None
 
 
+def test_cron_deps_built_when_target_is_a_non_news_wired_handler() -> None:
+    # The cron target is config-driven, not hard-coded to "news": a cron
+    # pointing at any registered handler must wire (Copilot 4th-pass finding).
+    deps = _build_cron_deps(
+        config=_cron_cfg(handler="echo"), clock=SystemClock(), wired_handlers={"echo"}
+    )
+    assert deps is not None
+
+
 def test_cron_deps_skipped_when_cron_disabled() -> None:
     cfg = Config(triggers={"cron": CronTriggerEntry(enabled=False)})
     deps = _build_cron_deps(config=cfg, clock=SystemClock(), wired_handlers={"news"})

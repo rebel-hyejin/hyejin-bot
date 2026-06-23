@@ -76,7 +76,7 @@ async def _outbox_rows(conn: aiosqlite.Connection) -> list[tuple[str, str]]:
     return [(str(r["type"]), str(r["handler"])) for r in rows]
 
 
-# KST is UTC+9, so 00:00 UTC on the 23rd is 09:00 KST on the 23rd — past 08:30.
+# KST is UTC+9, so 23:45 UTC on the 22nd is 08:45 KST on the 23rd — past 08:30.
 _KST_MORNING_UTC = datetime(2026, 6, 22, 23, 45, 0, tzinfo=UTC)  # 08:45 KST on the 23rd
 
 
@@ -133,6 +133,30 @@ async def test_fires_again_next_day(tmp_path: Path) -> None:
     rows = await _outbox_rows(conn)
     assert rows == [("news.daily", "news"), ("news.daily", "news")]
     assert await cron_state.last_fired_date(conn, job_name="news_daily") == "2026-06-24"
+    await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_dedup_hit_still_marks_fired(tmp_path: Path) -> None:
+    # Simulate an overlapping instance: fire once, then wipe THIS instance's
+    # cron_state row (as if another daemon fired but we didn't see its state).
+    # The next tick's event INSERT dedups on (source, dedup_key) → emit=False,
+    # but cron_state must still be marked so we don't retry every tick all day.
+    conn = await _open(tmp_path)
+    clock = _FixedClock(current=_KST_MORNING_UTC)
+    trigger = _make_trigger(db_path=tmp_path / "state.db", clock=clock)
+
+    assert await trigger.tick_once() is True
+    # Forget our own state but keep the emitted event (the dedup row).
+    await conn.execute("DELETE FROM cron_state WHERE job_name = 'news_daily'")
+    await conn.commit()
+
+    # Next tick: event dedups (no new outbox row) but state is re-recorded.
+    assert await trigger.tick_once() is False
+    assert await cron_state.last_fired_date(conn, job_name="news_daily") == "2026-06-23"
+    # And a subsequent tick is a clean no-op (state now suppresses it).
+    assert await trigger.tick_once() is False
+    assert len(await _outbox_rows(conn)) == 1  # only the original emit
     await conn.close()
 
 

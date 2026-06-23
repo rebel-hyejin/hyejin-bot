@@ -22,7 +22,7 @@ Output ONLY a JSON object, no prose, matching exactly:
   "summaries": [
     {
       "url": "<the item's url, verbatim>",
-      "headline_ko": "<one Korean line, <=40 chars, the 'why it matters' angle>",
+      "headline_ko": "<one Korean line, aim for ~40 chars, hard max 120, the 'why it matters' angle>",
       "bullets_en": ["<English bullet, <=20 words>", "<=3 bullets total>"]
     }
   ]

@@ -139,13 +139,18 @@ class CronTrigger:
 
             now_iso = now_utc.astimezone(UTC).isoformat()
             emitted = await self._emit_event(conn, fired_date=today, now=now_utc, now_iso=now_iso)
-            if emitted:
-                await cron_state.mark_fired(
-                    conn,
-                    job_name=self.job_name,
-                    fired_date=today,
-                    fired_at_iso=now_iso,
-                )
+            # Mark fired whether we emitted OR the emit was deduped by the
+            # `(source, source_dedup_key)` UNIQUE. A dedup hit means another
+            # instance (e.g. an overlapping daemon during a deploy) already
+            # fired today's job — without recording it, THIS instance would
+            # retry the insert on every tick for the rest of the day. Either
+            # way, today's job is handled; record it and move on.
+            await cron_state.mark_fired(
+                conn,
+                job_name=self.job_name,
+                fired_date=today,
+                fired_at_iso=now_iso,
+            )
             await conn.commit()
             return emitted
 

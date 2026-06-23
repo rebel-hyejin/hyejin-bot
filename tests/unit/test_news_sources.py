@@ -103,3 +103,28 @@ def test_geeknews_rss_naive_pubdate_does_not_raise() -> None:
     items = _parse_geeknews_rss(_RSS_NAIVE_DATE, limit=10, now=now, window_hours=24)
     assert len(items) == 1
     assert items[0].title == "tz 없는 글"
+
+
+_RSS_NO_PUBDATE = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>날짜 없는 글</title>
+    <link>https://news.hada.io/topic?id=7</link>
+  </item>
+</channel></rss>
+"""
+
+
+def test_geeknews_rss_drops_items_without_pubdate() -> None:
+    # Contract: keep only items provably within the window. A missing/
+    # unparseable pubDate has no provable recency → dropped (Copilot finding).
+    now = datetime(2026, 6, 23, 6, 0, 0, tzinfo=UTC)
+    assert _parse_geeknews_rss(_RSS_NO_PUBDATE, limit=10, now=now, window_hours=24) == []
+
+
+def test_geeknews_rss_rejects_oversized_body() -> None:
+    # A body far larger than the real feed is refused before parsing
+    # (resource-exhaustion guard). Build a >4MB string cheaply.
+    now = datetime(2026, 6, 23, 6, 0, 0, tzinfo=UTC)
+    huge = "<rss>" + ("x" * (5 * 1024 * 1024)) + "</rss>"
+    assert _parse_geeknews_rss(huge, limit=10, now=now, window_hours=24) == []

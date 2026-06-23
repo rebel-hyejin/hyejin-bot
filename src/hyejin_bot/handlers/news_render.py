@@ -95,12 +95,31 @@ def _pack(header: str, blocks: list[str]) -> list[str]:
         if has_block:
             messages.append(current)
         # Start the next message with the header again so every chunk has
-        # context. A single block that overflows even `header + block` is rare;
-        # ship it on its own (Slack truncates it, but it stays the only casualty).
-        current = f"{header}\n\n{_DIVIDER}\n\n{block}"
+        # context. If a single block still overflows `header + block`, truncate
+        # the block so the emitted message honors the <=_SLACK_TEXT_LIMIT
+        # contract (no silent reliance on Slack-side truncation).
+        prefix = f"{header}\n\n{_DIVIDER}\n\n"
+        current = prefix + _truncate(block, _SLACK_TEXT_LIMIT - len(prefix))
         has_block = True
     messages.append(current)
     return messages
+
+
+_TRUNCATE_MARKER = "…(생략)"
+
+
+def _truncate(text: str, limit: int) -> str:
+    """Clip `text` to at most `limit` chars, appending a marker when cut.
+
+    `limit` is the budget left for the block after the header+divider prefix;
+    it's comfortably positive for any realistic header, but we guard the
+    degenerate case (limit <= marker length) by returning a hard slice.
+    """
+    if len(text) <= limit:
+        return text
+    if limit <= len(_TRUNCATE_MARKER):
+        return text[:limit]
+    return text[: limit - len(_TRUNCATE_MARKER)] + _TRUNCATE_MARKER
 
 
 __all__ = ["render_messages"]

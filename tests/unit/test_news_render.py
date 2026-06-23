@@ -61,6 +61,25 @@ def test_long_clip_splits_and_every_message_keeps_header() -> None:
         assert "Story" in m
 
 
+def test_single_oversized_block_is_truncated_to_limit() -> None:
+    # A single item whose rendered block alone exceeds 4000 chars must be
+    # truncated so the emitted message still honors the Slack limit (no
+    # silent reliance on Slack-side truncation — Copilot finding).
+    big = _hn("T", "https://ex.com/big", 300)
+    summaries = {
+        big.url: HnSummary(
+            url=big.url,
+            headline_ko="h",
+            bullets_en=["q" * 4500],  # block > 4000 on its own
+        )
+    }
+    msgs = render_messages(
+        date_str="2026-06-23", hn_items=[big], geeknews_items=[], summaries=summaries
+    )
+    assert all(len(m) <= _LIMIT for m in msgs)
+    assert any("…(생략)" in m for m in msgs)
+
+
 def test_split_covers_all_items_in_order() -> None:
     items = [_hn(f"Story{i}", f"https://ex.com/{i}", 300 + i) for i in range(10)]
     summaries = {

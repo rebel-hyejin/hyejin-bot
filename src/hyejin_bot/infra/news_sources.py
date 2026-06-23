@@ -42,6 +42,13 @@ _GEEKNEWS_RSS = "https://feeds.feedburner.com/geeknews-feed"
 _HN_SCORE_THRESHOLDS: tuple[int, ...] = (200, 150, 100)
 # How many of the top-ranked HN stories to inspect per run.
 _HN_TOP_SCAN = 50
+# Hard cap on the GeekNews RSS body we'll parse. The feed is ~tens of KB; a
+# response materially larger than this is either a feed change or a hostile
+# payload (billion-laughs / deeply-nested XML resource exhaustion). Stdlib
+# ElementTree does not expand external entities, but it will still chew CPU on
+# a pathological document — bounding the input size is the cheap defense that
+# avoids pulling in a new dep (defusedxml). 4 MB is ~100x headroom.
+_MAX_RSS_BYTES = 4 * 1024 * 1024
 
 
 @runtime_checkable
@@ -148,8 +155,15 @@ def _apply_hn_threshold(items: list[NewsItem], *, limit: int) -> list[NewsItem]:
 def _parse_geeknews_rss(
     body: str, *, limit: int, now: datetime, window_hours: int
 ) -> list[NewsItem]:
+    # Size guard before parsing: a body far larger than the real feed is a
+    # feed change or a resource-exhaustion payload — refuse rather than parse.
+    if len(body.encode("utf-8", errors="ignore")) > _MAX_RSS_BYTES:
+        _log.warning("news.geeknews_oversized", bytes=len(body))
+        return []
     try:
-        root = ET.fromstring(body)  # noqa: S314 — trusted feed, not user input
+        # Stdlib ET does NOT resolve external entities, so XXE is out; the
+        # size cap above bounds entity-expansion / nesting CPU cost.
+        root = ET.fromstring(body)  # noqa: S314 — size-bounded above; no external-entity resolution
     except ET.ParseError as exc:
         _log.warning("news.geeknews_parse_failed", error=str(exc))
         return []
@@ -162,7 +176,10 @@ def _parse_geeknews_rss(
             continue
         pub = _rss_text(item, "pubDate")
         published = _parse_rss_date(pub)
-        if published is not None and published < cutoff:
+        # Contract: keep only items published within the window. An item with
+        # a missing/unparseable pubDate has no provable recency, so drop it
+        # rather than risk admitting a stale entry on a feed-format change.
+        if published is None or published < cutoff:
             continue
         out.append(NewsItem(source=NewsSource.GEEKNEWS, title=title, url=link))
         if len(out) >= limit:

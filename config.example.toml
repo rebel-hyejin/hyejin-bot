@@ -136,6 +136,21 @@ max_per_cycle = 200                      # safety cap per cycle
 # disables team match (assignee-only mode).
 team_name = "DevOps"
 
+[triggers.cron]
+# Generic daily wall-clock trigger. v1 fires the news clip every morning.
+# Default off — flip on (and enable [handlers.news] + [slack]) to start.
+# The job fires once per local-tz calendar day, on the first tick at or after
+# schedule_hour:schedule_minute. A daemon down across the whole window simply
+# misses that day (no backfill — a stale clip helps no one).
+enabled = false
+job_name = "news_daily"
+event_type = "news.daily"
+handler = "news"
+schedule_hour = 8
+schedule_minute = 30
+timezone = "Asia/Seoul"
+poll_interval_seconds = 300              # tick cadence; keep well under an hour
+
 # ─── Handlers ──────────────────────────────────────────────────────────────────
 # Manifest fields here override the handler's compile-time defaults.
 
@@ -239,6 +254,27 @@ branch_field_id = ""
 commit_field_id = ""
 team_field_id = ""
 
+[handlers.news]
+# Daily tech-news clip DM'd to the operator's Slack channel. Requires
+# [slack].enabled = true (or a `channel` set here) and [triggers.cron] on
+# for the automatic morning fire. Can also be fired manually via the CLI.
+# Default off.
+enabled = false
+idempotent = true
+dedup_ttl_seconds = 82800                # 23h — one clip per day
+concurrency = 1
+accepts = ["news.daily"]
+# Slack channel for the DM. Empty = inherit [slack].channel.
+channel = ""
+# Per-source caps. HN gets Claude summaries; GeekNews ships title + link only.
+hn_limit = 6
+geeknews_limit = 4
+# Dates the clip header; also the cron fire-once-per-day calendar.
+timezone = "Asia/Seoul"
+# GeekNews RSS recency window + per-call HTTP timeout for the fetcher.
+geeknews_window_hours = 24
+fetch_timeout_seconds = 10.0
+
 # ─── Routing ───────────────────────────────────────────────────────────────────
 # event.type → list of handler names. A type with no entry is dropped (logged).
 
@@ -248,3 +284,4 @@ team_field_id = ""
 "pr.review.manual"    = ["pr_review"]
 "jira.assigned"       = ["jira_triage"]
 "jira.triage.manual"  = ["jira_triage"]
+"news.daily"          = ["news"]

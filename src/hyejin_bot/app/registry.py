@@ -13,10 +13,12 @@ from typing import Any
 
 from hyejin_bot.app.config import (
     Config,
+    CronTriggerEntry,
     GhReviewRequestedTriggerEntry,
     HandlerEntry,
     JiraAssignedTriggerEntry,
     JiraTriageHandlerEntry,
+    NewsHandlerEntry,
     PrReviewHandlerEntry,
 )
 from hyejin_bot.core.errors import ConfigError
@@ -24,10 +26,12 @@ from hyejin_bot.core.manifest import HandlerManifest, TriggerManifest
 from hyejin_bot.core.time import Clock
 from hyejin_bot.handlers import echo as echo_handler
 from hyejin_bot.handlers import jira_triage as jira_triage_handler
+from hyejin_bot.handlers import news as news_handler
 from hyejin_bot.handlers import pr_review as pr_review_handler
 from hyejin_bot.handlers.pr_review import PauseGuard
 from hyejin_bot.infra.jira_client import FieldDiscovery, JiraIdentity
 from hyejin_bot.infra.persona_loader import PersonaLoader
+from hyejin_bot.triggers import cron as cron_trigger
 from hyejin_bot.triggers import gh_review_requested as gh_review_requested_trigger
 from hyejin_bot.triggers import jira_assigned as jira_assigned_trigger
 from hyejin_bot.triggers.gh_review_requested import StorageFactory
@@ -86,6 +90,21 @@ class PrReviewDeps:
     slack_channel: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class NewsDeps:
+    """Runtime dependencies the `news` handler can't fabricate itself.
+
+    Inspection-only callers omit these; the registry skips the handler in
+    that case (mirrors PrReviewDeps / JiraTriageDeps). `slack` is required —
+    the handler's only output is a DM, so an enabled-but-Slack-less config is
+    a no-op the container refuses to build.
+    """
+
+    fetcher: Any
+    slack: Any
+    slack_channel: str
+
+
 @dataclass(slots=True)
 class HandlerRegistry:
     """Registry the dispatcher consults to look up a handler by name."""
@@ -126,11 +145,12 @@ def build_handler_registry(
     *,
     pr_review_deps: PrReviewDeps | None = None,
     jira_triage_deps: JiraTriageDeps | None = None,
+    news_deps: NewsDeps | None = None,
 ) -> HandlerRegistry:
     """Instantiate enabled handlers from config, applying manifest overrides.
 
-    `pr_review_deps` / `jira_triage_deps` are required only when the
-    corresponding handler is `enabled = true` AND the caller intends to
+    `pr_review_deps` / `jira_triage_deps` / `news_deps` are required only when
+    the corresponding handler is `enabled = true` AND the caller intends to
     actually dispatch (i.e. via the container). For inspection-only
     paths the dep is None and the handler is silently skipped.
     """
@@ -143,12 +163,15 @@ def build_handler_registry(
             continue
         if name == "jira_triage" and jira_triage_deps is None:
             continue
+        if name == "news" and news_deps is None:
+            continue
         record = instantiate_handler(
             name,
             entry,
             config=config,
             pr_review_deps=pr_review_deps,
             jira_triage_deps=jira_triage_deps,
+            news_deps=news_deps,
         )
         registry.register(record)
 
@@ -162,6 +185,7 @@ def instantiate_handler(
     config: Config | None = None,
     pr_review_deps: PrReviewDeps | None = None,
     jira_triage_deps: JiraTriageDeps | None = None,
+    news_deps: NewsDeps | None = None,
 ) -> HandlerRecord:
     if name == "echo":
         manifest = _override_manifest(echo_handler.MANIFEST, entry)
@@ -227,6 +251,25 @@ def instantiate_handler(
             jt_kwargs["pause_guard"] = jira_triage_deps.pause_guard
         instance = jira_triage_handler.JiraTriageHandler(**jt_kwargs)
         return HandlerRecord(name=name, manifest=manifest, instance=instance)
+    if name == "news":
+        if news_deps is None:
+            raise ConfigError("news handler requires NewsDeps; build via container.build()")
+        news_entry = (
+            entry
+            if isinstance(entry, NewsHandlerEntry)
+            else NewsHandlerEntry.model_validate(entry.model_dump())
+        )
+        manifest = _override_manifest(news_handler.MANIFEST, news_entry)
+        instance = news_handler.NewsHandler(
+            manifest=manifest,
+            fetcher=news_deps.fetcher,
+            slack=news_deps.slack,
+            slack_channel=news_deps.slack_channel,
+            timezone_name=news_entry.timezone,
+            hn_limit=news_entry.hn_limit,
+            geeknews_limit=news_entry.geeknews_limit,
+        )
+        return HandlerRecord(name=name, manifest=manifest, instance=instance)
     raise ConfigError(f"unknown handler in config: {name!r}")
 
 
@@ -281,11 +324,27 @@ class GhReviewRequestedDeps:
     permanent_failure_reporter: gh_review_requested_trigger.PermanentFailureReporter
 
 
+@dataclass(frozen=True, slots=True)
+class CronDeps:
+    """Runtime deps for the generic `cron` daily trigger. Feature 003.
+
+    Like the polling triggers, cron writes events directly via
+    `storage_factory` (state UPSERT + event INSERT in one tx). `clock`
+    supplies the wall time it checks against the scheduled local time.
+    """
+
+    storage_factory: cron_trigger.StorageFactory
+    clock: Clock
+    pause_check: Callable[[], bool]
+    permanent_failure_reporter: cron_trigger.PermanentFailureReporter
+
+
 def build_trigger_registry(
     config: Config,
     *,
     gh_review_requested_deps: GhReviewRequestedDeps | None = None,
     jira_assigned_deps: JiraAssignedDeps | None = None,
+    cron_deps: CronDeps | None = None,
 ) -> list[TriggerRecord]:
     """Instantiate enabled live triggers from `config.triggers`."""
     out: list[TriggerRecord] = []
@@ -296,12 +355,15 @@ def build_trigger_registry(
             continue
         if name == "jira_assigned" and jira_assigned_deps is None:
             continue
+        if name == "cron" and cron_deps is None:
+            continue
         record = instantiate_trigger(
             name,
             entry,
             config=config,
             gh_review_requested_deps=gh_review_requested_deps,
             jira_assigned_deps=jira_assigned_deps,
+            cron_deps=cron_deps,
         )
         if record is not None:
             out.append(record)
@@ -315,6 +377,7 @@ def instantiate_trigger(
     config: Config,
     gh_review_requested_deps: GhReviewRequestedDeps | None = None,
     jira_assigned_deps: JiraAssignedDeps | None = None,
+    cron_deps: CronDeps | None = None,
 ) -> TriggerRecord | None:
     if name == "manual":
         # `manual` has no live loop — events arrive via the CLI. Skip.
@@ -381,6 +444,28 @@ def instantiate_trigger(
         return TriggerRecord(
             name=name,
             manifest=jira_assigned_trigger.MANIFEST,
+            instance=instance,
+        )
+    if name == "cron":
+        if cron_deps is None:
+            raise ConfigError("cron trigger requires CronDeps; build via container.build()")
+        cron_entry = entry if isinstance(entry, CronTriggerEntry) else config.cron_trigger_entry()
+        instance = cron_trigger.CronTrigger(
+            job_name=cron_entry.job_name,
+            event_type=cron_entry.event_type,
+            handler_name=cron_entry.handler,
+            schedule_hour=cron_entry.schedule_hour,
+            schedule_minute=cron_entry.schedule_minute,
+            timezone_name=cron_entry.timezone,
+            storage_factory=cron_deps.storage_factory,
+            clock=cron_deps.clock,
+            poll_interval_seconds=float(cron_entry.poll_interval_seconds),
+            pause_check=cron_deps.pause_check,
+            permanent_failure_reporter=cron_deps.permanent_failure_reporter,
+        )
+        return TriggerRecord(
+            name=name,
+            manifest=cron_trigger.MANIFEST,
             instance=instance,
         )
     raise ConfigError(f"unknown trigger in config: {name!r}")

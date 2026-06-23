@@ -225,3 +225,45 @@ def test_example_toml_parses_jira_sections(tmp_path: Path) -> None:
     handler = cfg.jira_triage_handler_entry()
     assert handler.enabled is False
     assert handler.persona_skill == "hyejin-bot-jira-triage"
+
+
+# ── News-clip feature config (Feature 003) ────────────────────────────────────
+
+
+def test_cron_trigger_entry_defaults() -> None:
+    """[triggers.cron] defaults: 08:30 Asia/Seoul, news.daily → news."""
+    cfg = Config()
+    entry = cfg.cron_trigger_entry()
+    assert entry.job_name == "news_daily"
+    assert entry.event_type == "news.daily"
+    assert entry.handler == "news"
+    assert (entry.schedule_hour, entry.schedule_minute) == (8, 30)
+    assert entry.timezone == "Asia/Seoul"
+    assert entry.poll_interval_seconds == 300
+
+
+def test_news_handler_entry_defaults() -> None:
+    """[handlers.news] defaults: 6 HN + 4 GeekNews, channel inherits [slack]."""
+    cfg = Config()
+    entry = cfg.news_handler_entry()
+    assert entry.channel == ""
+    assert entry.hn_limit == 6
+    assert entry.geeknews_limit == 4
+    assert entry.timezone == "Asia/Seoul"
+    assert entry.geeknews_window_hours == 24
+    assert entry.fetch_timeout_seconds == 10.0
+
+
+def test_example_toml_parses_news_sections(tmp_path: Path) -> None:
+    """The shipped config.example.toml includes [triggers.cron] + [handlers.news]."""
+    src = Path(__file__).resolve().parents[2] / "config.example.toml"
+    dst = tmp_path / "config.toml"
+    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    cfg = load(str(dst))
+    cron = cfg.cron_trigger_entry()
+    assert cron.enabled is False  # default off, runtime opt-in
+    assert cron.event_type == "news.daily"
+    news = cfg.news_handler_entry()
+    assert news.enabled is False
+    assert news.accepts == ["news.daily"]
+    assert cfg.routing["news.daily"] == ["news"]

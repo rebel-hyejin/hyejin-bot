@@ -162,6 +162,25 @@ class JiraAssignedTriggerEntry(TriggerEntry):
     team_name: str = "DevOps"
 
 
+class CronTriggerEntry(TriggerEntry):
+    """Typed view of `[triggers.cron]`. Feature 003.
+
+    A single daily job. `event_type` / `handler` name the event the cron emits
+    and the handler it routes to; `schedule_hour` / `schedule_minute` are the
+    local-tz time-of-day; `timezone` is an IANA name (e.g. `Asia/Seoul`).
+    `poll_interval_seconds` is the tick cadence — keep it well under an hour so
+    the job fires close to the scheduled minute.
+    """
+
+    job_name: str = "news_daily"
+    event_type: str = "news.daily"
+    handler: str = "news"
+    schedule_hour: int = 8
+    schedule_minute: int = 30
+    timezone: str = "Asia/Seoul"
+    poll_interval_seconds: int = 300
+
+
 class HandlerEntry(BaseModel):
     """Runtime override for a handler. Mirrors HandlerManifest fields."""
 
@@ -248,6 +267,24 @@ class JiraTriageHandlerEntry(HandlerEntry):
     team_field_id: str = ""
 
 
+class NewsHandlerEntry(HandlerEntry):
+    """Typed view of `[handlers.news]`. Feature 003.
+
+    The news handler DMs the operator's Slack channel, so it needs the same
+    Slack surface the pr_review side-channel uses. `channel` defaults to the
+    top-level `[slack].channel` when left empty (resolved in the container).
+    `hn_limit` / `geeknews_limit` cap each source; `timezone` dates the clip.
+    """
+
+    channel: str = ""
+    hn_limit: int = 6
+    geeknews_limit: int = 4
+    timezone: str = "Asia/Seoul"
+    # GeekNews RSS recency window + per-call HTTP timeout for the fetcher.
+    geeknews_window_hours: int = 24
+    fetch_timeout_seconds: float = 10.0
+
+
 class Config(BaseSettings):
     # `extra="forbid"` so a typo like `[handlrs.pr_review]` raises at boot
     # instead of silently dropping the section. The two leaf entries
@@ -303,6 +340,20 @@ class Config(BaseSettings):
         if raw is None:
             return JiraTriageHandlerEntry()
         return JiraTriageHandlerEntry.model_validate(raw.model_dump())
+
+    def cron_trigger_entry(self) -> CronTriggerEntry:
+        """Typed view of `[triggers.cron]` (with defaults). Feature 003."""
+        raw = self.triggers.get("cron")
+        if raw is None:
+            return CronTriggerEntry()
+        return CronTriggerEntry.model_validate(raw.model_dump())
+
+    def news_handler_entry(self) -> NewsHandlerEntry:
+        """Typed view of `[handlers.news]` (with defaults). Feature 003."""
+        raw = self.handlers.get("news")
+        if raw is None:
+            return NewsHandlerEntry()
+        return NewsHandlerEntry.model_validate(raw.model_dump())
 
     @property
     def state_dir_path(self) -> Path:

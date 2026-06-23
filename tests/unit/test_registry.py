@@ -4,11 +4,28 @@ from __future__ import annotations
 
 import pytest
 
-from hyejin_bot.app.config import Config, HandlerEntry, PrReviewHandlerEntry
-from hyejin_bot.app.registry import PrReviewDeps, build_handler_registry
+from hyejin_bot.app.config import (
+    Config,
+    CronTriggerEntry,
+    HandlerEntry,
+    NewsHandlerEntry,
+    PrReviewHandlerEntry,
+)
+from hyejin_bot.app.registry import (
+    CronDeps,
+    NewsDeps,
+    PrReviewDeps,
+    build_handler_registry,
+    build_trigger_registry,
+)
 from hyejin_bot.core.errors import ConfigError
+from hyejin_bot.core.time import SystemClock
+from hyejin_bot.handlers.news import NewsHandler
 from hyejin_bot.handlers.pr_review import PrReviewHandler
+from hyejin_bot.infra.news_sources import FakeNewsFetcher
 from hyejin_bot.infra.pr_review_persona import PersonaLoader
+from hyejin_bot.infra.slack import FakeSlackClient
+from hyejin_bot.triggers.cron import CronTrigger
 
 
 def test_echo_registered_with_default_manifest() -> None:
@@ -91,3 +108,55 @@ def test_pr_review_directly_instantiated_without_deps_raises() -> None:
 
     with pytest.raises(ConfigError, match="PrReviewDeps"):
         instantiate_handler("pr_review", PrReviewHandlerEntry())
+
+
+# ── News handler + cron trigger registration (feature 003) ────────────────────
+
+
+def _news_cfg() -> Config:
+    return Config(
+        handlers={"news": NewsHandlerEntry(accepts=["news.daily"])},
+        routing={"news.daily": ["news"]},
+    )
+
+
+def test_news_skipped_when_no_deps_provided() -> None:
+    """Inspection-only callers pass no deps → handler is skipped."""
+    registry = build_handler_registry(_news_cfg())
+    assert "news" not in registry.by_name
+
+
+def test_news_registered_when_deps_provided() -> None:
+    deps = NewsDeps(
+        fetcher=FakeNewsFetcher(),
+        slack=FakeSlackClient(),
+        slack_channel="D08GP012483",
+    )
+    registry = build_handler_registry(_news_cfg(), news_deps=deps)
+    record = registry.by_name["news"]
+    assert isinstance(record.instance, NewsHandler)
+    assert record.manifest.accepts == ("news.daily",)
+
+
+def test_cron_trigger_skipped_when_no_deps_provided() -> None:
+    cfg = Config(triggers={"cron": CronTriggerEntry()})
+    triggers = build_trigger_registry(cfg)
+    assert all(t.name != "cron" for t in triggers)
+
+
+def test_cron_trigger_registered_when_deps_provided() -> None:
+    cfg = Config(triggers={"cron": CronTriggerEntry()})
+
+    async def _never(_reason: str) -> bool:
+        return False
+
+    deps = CronDeps(
+        storage_factory=lambda: None,  # type: ignore[arg-type, return-value]
+        clock=SystemClock(),
+        pause_check=lambda: False,
+        permanent_failure_reporter=_never,
+    )
+    triggers = build_trigger_registry(cfg, cron_deps=deps)
+    cron = next(t for t in triggers if t.name == "cron")
+    assert isinstance(cron.instance, CronTrigger)
+    assert cron.instance.event_type == "news.daily"

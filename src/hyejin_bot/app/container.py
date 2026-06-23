@@ -21,10 +21,12 @@ import structlog
 from hyejin_bot.app import pause as pause_mod
 from hyejin_bot.app.config import Config
 from hyejin_bot.app.registry import (
+    CronDeps,
     GhReviewRequestedDeps,
     HandlerRegistry,
     JiraAssignedDeps,
     JiraTriageDeps,
+    NewsDeps,
     PrReviewDeps,
     TriggerRecord,
     build_handler_registry,
@@ -40,6 +42,7 @@ from hyejin_bot.infra.gh_cli import GhCli
 from hyejin_bot.infra.host_resolver import HostResolver
 from hyejin_bot.infra.jira_client import FieldDiscovery, JiraClient, JiraIdentity
 from hyejin_bot.infra.loki import LokiClient
+from hyejin_bot.infra.news_sources import HttpNewsFetcher
 from hyejin_bot.infra.persona_loader import PersonaLoader
 from hyejin_bot.infra.secrets import SecretsProvider
 from hyejin_bot.infra.slack import HttpSlackClient
@@ -84,6 +87,8 @@ class ContainerOverrides:
     secrets_provider: SecretsProvider | None = None
     project_root: Any = None  # Path | None — project root for ssw_bundle path guard
     slack: Any = None  # SlackClient or a FakeSlackClient; None → fall back to config-driven build
+    # Feature 003 (news clip) override — tests inject a FakeNewsFetcher.
+    news_fetcher: Any = None  # NewsFetcher or a FakeNewsFetcher
 
 
 async def build(
@@ -114,6 +119,14 @@ async def build(
     pr_deps: PrReviewDeps | None = None
     clock = overrides.clock or SystemClock()
 
+    # Slack side-channel is shared by the pr_review LGTM nudge and the news DM,
+    # so build it once up front. Returns (None, "") when slack is disabled or
+    # the token can't be loaded — both consumers tolerate that (pr_review skips
+    # the nudge; the news handler/trigger are simply not wired).
+    slack_client, slack_channel = _build_slack_side_channel(
+        config=config, overrides=overrides, secrets_provider=secrets_provider
+    )
+
     if pr_review_enabled:
         gh = overrides.gh or GhCli(timeout_seconds=config.github.gh_call_timeout_seconds)
         persona_loader = overrides.persona_loader or PersonaLoader(
@@ -125,9 +138,6 @@ async def build(
             gh=gh,
         )
         pause_guard = overrides.pause_guard or _make_pause_guard(config)
-        slack_client, slack_channel = _build_slack_side_channel(
-            config=config, overrides=overrides, secrets_provider=secrets_provider
-        )
         pr_deps = PrReviewDeps(
             gh=gh,
             persona_loader=persona_loader,
@@ -156,10 +166,21 @@ async def build(
         secrets_provider=secrets_provider,
     )
 
+    # Feature 003: news handler + cron trigger. Both need the Slack channel;
+    # the handler also needs a fetcher, the trigger only the clock + storage.
+    news_deps = _build_news_deps(
+        config=config,
+        overrides=overrides,
+        slack_client=slack_client,
+        slack_channel=slack_channel,
+    )
+    cron_deps = _build_cron_deps(config=config, clock=clock)
+
     triggers = build_trigger_registry(
         config,
         gh_review_requested_deps=gh_trigger_deps,
         jira_assigned_deps=jira_assigned_deps,
+        cron_deps=cron_deps,
     )
 
     return Container(
@@ -170,6 +191,7 @@ async def build(
             config,
             pr_review_deps=pr_deps,
             jira_triage_deps=jira_triage_deps,
+            news_deps=news_deps,
         ),
         triggers=tuple(triggers),
         claude_session_factory=factory,
@@ -446,6 +468,85 @@ def _build_real_factory(config: Config, claude_api_key: str | None) -> Callable[
         api_key=claude_api_key,
         model=config.claude.model,
         default_system_prompt=config.claude.default_system_prompt,
+    )
+
+
+def _news_enabled(config: Config) -> bool:
+    entry = config.handlers.get("news")
+    return entry is not None and entry.enabled
+
+
+def _cron_enabled(config: Config) -> bool:
+    entry = config.triggers.get("cron")
+    return entry is not None and entry.enabled
+
+
+def _build_news_deps(
+    *,
+    config: Config,
+    overrides: ContainerOverrides,
+    slack_client: Any,
+    slack_channel: str,
+) -> NewsDeps | None:
+    """Assemble `NewsDeps` when `[handlers.news]` is enabled.
+
+    The handler's only output is a Slack DM, so a missing Slack client means
+    there's nothing to wire — skip with a warning rather than booting a
+    handler that can only fail. `overrides.news_fetcher` lets tests inject a
+    FakeNewsFetcher; production builds an `HttpNewsFetcher` from config knobs.
+    """
+    if not _news_enabled(config):
+        return None
+    news_entry = config.news_handler_entry()
+    channel = news_entry.channel or slack_channel
+    if slack_client is None or not channel:
+        _log.warning(
+            "news.handler_skipped",
+            reason="news.enabled=true but no slack client/channel available",
+        )
+        return None
+    fetcher = overrides.news_fetcher or HttpNewsFetcher(
+        timeout_s=news_entry.fetch_timeout_seconds,
+        geeknews_window_hours=news_entry.geeknews_window_hours,
+    )
+    return NewsDeps(fetcher=fetcher, slack=slack_client, slack_channel=channel)
+
+
+def _build_cron_deps(*, config: Config, clock: Clock) -> CronDeps | None:
+    """Assemble `CronDeps` when `[triggers.cron]` is enabled.
+
+    The cron trigger persists events directly through SQLite, so it owns its
+    own short-lived connections via `storage_factory` — same pattern as the
+    polling triggers.
+    """
+    if not _cron_enabled(config):
+        return None
+    db_path = config.db_path
+
+    def _storage_factory() -> Any:
+        return storage.connection(db_path)
+
+    pause_flag_path = config.pause_flag_path
+
+    def _pause_check() -> bool:
+        return pause_mod.is_paused(pause_flag_path)
+
+    supervisor = TriggerSupervisor()
+
+    async def _report_permanent_failure(reason: str) -> bool:
+        async with storage.connection(db_path) as conn:
+            return await supervisor.record_failure(
+                conn,
+                trigger_name="cron",
+                reason=reason,
+                at=clock.now(),
+            )
+
+    return CronDeps(
+        storage_factory=_storage_factory,
+        clock=clock,
+        pause_check=_pause_check,
+        permanent_failure_reporter=_report_permanent_failure,
     )
 
 

@@ -174,7 +174,13 @@ async def build(
         slack_client=slack_client,
         slack_channel=slack_channel,
     )
-    cron_deps = _build_cron_deps(config=config, clock=clock)
+    # The cron trigger fires events at a handler by name; wiring it when that
+    # handler won't be registered would dead-letter every fire as "handler not
+    # registered". Tell `_build_cron_deps` which handlers are actually wired so
+    # it can skip a cron whose target is missing. Today the only cron target is
+    # `news` (built above); extend this set as new cron-driven handlers land.
+    wired_handlers = {"news"} if news_deps is not None else set[str]()
+    cron_deps = _build_cron_deps(config=config, clock=clock, wired_handlers=wired_handlers)
 
     triggers = build_trigger_registry(
         config,
@@ -512,14 +518,27 @@ def _build_news_deps(
     return NewsDeps(fetcher=fetcher, slack=slack_client, slack_channel=channel)
 
 
-def _build_cron_deps(*, config: Config, clock: Clock) -> CronDeps | None:
+def _build_cron_deps(*, config: Config, clock: Clock, wired_handlers: set[str]) -> CronDeps | None:
     """Assemble `CronDeps` when `[triggers.cron]` is enabled.
 
     The cron trigger persists events directly through SQLite, so it owns its
     own short-lived connections via `storage_factory` — same pattern as the
     polling triggers.
+
+    Skips wiring (returns None) when the cron's configured target handler is
+    not in `wired_handlers` — otherwise every fire would enqueue an event no
+    handler can consume, and the dispatcher would dead-letter each one as
+    "handler not registered", burying the real misconfiguration in noise.
     """
     if not _cron_enabled(config):
+        return None
+    target_handler = config.cron_trigger_entry().handler
+    if target_handler not in wired_handlers:
+        _log.warning(
+            "cron.trigger_skipped",
+            reason="target handler not registered/wired",
+            target_handler=target_handler,
+        )
         return None
     db_path = config.db_path
 

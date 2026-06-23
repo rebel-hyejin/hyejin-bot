@@ -157,8 +157,11 @@ def _parse_geeknews_rss(
 ) -> list[NewsItem]:
     # Size guard before parsing: a body far larger than the real feed is a
     # feed change or a resource-exhaustion payload — refuse rather than parse.
-    if len(body.encode("utf-8", errors="ignore")) > _MAX_RSS_BYTES:
-        _log.warning("news.geeknews_oversized", bytes=len(body))
+    body_bytes = len(body.encode("utf-8", errors="ignore"))
+    if body_bytes > _MAX_RSS_BYTES:
+        # Log the byte length we actually enforced (not char count — a Korean
+        # feed has bytes != chars, which would make the warning misleading).
+        _log.warning("news.geeknews_oversized", bytes=body_bytes, limit=_MAX_RSS_BYTES)
         return []
     try:
         # Stdlib ET does NOT resolve external entities, so XXE is out; the

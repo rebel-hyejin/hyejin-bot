@@ -31,6 +31,8 @@
 
 Verdict 라인 형식: `**Verdict**: <APPROVE | PASS | CONCERNS | FAIL> — <한 문장 근거>`. 본문 첫 줄에 위치하되, role-primed인 경우 `**Reviewer**: as Senior <Role>` 한 줄이 그 위에 들어간다. 근거는 별도 섹션이 아니라 같은 줄에 통합 — 별도 Recommendation Rationale 섹션을 두지 않는다.
 
+**Severity 카운트 라인 (권장)**: finding이 1개 이상이면 Verdict 바로 아랫줄에 한 줄로 개수를 적어 독자가 표를 보기 전에 규모를 파악하게 한다. 형식: `🚨 N CRITICAL · ⚠️ M MAJOR · 💡 K MINOR` (0인 severity는 생략). finding 0개(APPROVE)면 이 줄 생략. 이 줄은 사람이 빠르게 스캔하기 위한 것이므로 이모지를 허용한다(라벨 ASCII-only 규칙의 예외 — 본문 산문/표 셀이 아니라 메타 요약 라인).
+
 ## Review Summary 템플릿
 
 PR-bound 출력의 표준 형태. **본문 산문은 한국어**, 라벨·룰 ID·`file:line`·코드 식별자는 영어 ASCII 유지. 채팅 caller는 이모지/sign-off 정책만 다름 ([delivery.md](delivery.md) §Caller modes).
@@ -62,6 +64,7 @@ PR-bound 출력의 표준 형태. **본문 산문은 한국어**, 라벨·룰 ID
 
 ```
 **Verdict**: <PASS | CONCERNS | FAIL> — <한 문장 근거>
+🚨 2 CRITICAL · ⚠️ 2 MAJOR · 💡 1 MINOR
 
 **개요**
 <2–3문장 한국어. 이 PR이 무엇을 바꾸는지, 누구에게 영향이 가는지, 주요 위험 표면.

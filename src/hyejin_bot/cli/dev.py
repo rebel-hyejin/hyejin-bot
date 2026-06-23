@@ -339,6 +339,52 @@ async def _fire_jira_triage(
     typer.echo(event.id)
 
 
+@app.command(
+    "fire-news",
+    help="Enqueue a manual news.daily event (the same event the cron trigger emits).",
+)
+def fire_news(
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config.toml."),
+) -> None:
+    asyncio.run(_fire_news(config_path=config))
+
+
+async def _fire_news(*, config_path: str | None) -> None:
+    """Build a `news.daily` event and enqueue it via the outbox.
+
+    Uses a CLI-unique dedup key so a manual fire always queues a fresh clip,
+    independent of the cron trigger's once-per-day `(job, date)` dedup.
+    """
+    cfg = load(config_path)
+    cfg.state_dir_path.mkdir(parents=True, exist_ok=True)
+
+    routing = cfg.routing.get("news.daily", [])
+    if not routing:
+        raise typer.BadParameter(
+            "no handlers configured for 'news.daily'. Edit config.toml's [routing] section."
+        )
+
+    now = datetime.now(tz=UTC)
+    event = make_event(
+        type="news.daily",
+        payload={"job": "news_daily", "fired_at": now.isoformat(), "manual": True},
+        created_at=now,
+    )
+    dedup_key = f"cli-{uuid.uuid4()}"
+
+    async with storage.connection(cfg.db_path) as conn:
+        await storage.apply_migrations(conn)
+        ok = await outbox.insert_event(
+            conn, event, source="cron_manual", source_dedup_key=dedup_key
+        )
+        if not ok:
+            raise typer.Exit(code=1)
+        for handler in routing:
+            await outbox.enqueue_handler(conn, event_id=event.id, handler=handler, now=now)
+        await conn.commit()
+    typer.echo(event.id)
+
+
 @app.command("repl", help="Drop into IPython with the production container bound.")
 def repl() -> None:
     raise NotImplementedError("Phase 3+: IPython.embed with container in scope")

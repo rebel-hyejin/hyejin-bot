@@ -190,7 +190,8 @@ def test_append_folded_bullets_handles_trailing_newline() -> None:
         "Summary line.\n",
         [InlineComment(path="a.py", line=3, side="RIGHT", body="nit")],
     )
-    assert out.startswith("Summary line.\n\n- [a.py near L3]")
+    assert out.startswith("Summary line.\n\n**Out-of-diff notes**")
+    assert "> **`a.py:3`** — nit" in out
 
 
 def test_append_folded_bullets_no_trailing_newline() -> None:
@@ -198,7 +199,8 @@ def test_append_folded_bullets_no_trailing_newline() -> None:
         "Summary line.",
         [InlineComment(path="a.py", line=3, side="RIGHT", body="nit")],
     )
-    assert out.startswith("Summary line.\n\n- [a.py near L3]")
+    assert out.startswith("Summary line.\n\n**Out-of-diff notes**")
+    assert "> **`a.py:3`** — nit" in out
 
 
 def test_append_folded_bullets_inserts_before_signoff() -> None:
@@ -212,8 +214,8 @@ def test_append_folded_bullets_inserts_before_signoff() -> None:
     )
     last_non_empty = next(line for line in reversed(out.split("\n")) if line.strip())
     assert last_non_empty == "— hyejin-bot 🐱✨"
-    assert "- [a.py near L3] nit" in out
-    bullets_idx = out.index("- [a.py near L3]")
+    assert "> **`a.py:3`** — nit" in out
+    bullets_idx = out.index("> **`a.py:3`**")
     signoff_idx = out.index("— hyejin-bot 🐱✨")
     assert bullets_idx < signoff_idx
 
@@ -231,7 +233,24 @@ def test_append_folded_bullets_handles_role_primed_signoff() -> None:
     )
     last_non_empty = next(line for line in reversed(out.split("\n")) if line.strip())
     assert last_non_empty == "— hyejin-bot 🐱✨ (as Senior SRE)"
-    assert "- [b.py near L7] evidence" in out
+    assert "> **`b.py:7`** — evidence" in out
+
+
+def test_append_folded_bullets_strips_duplicate_anchor_and_keeps_first_line() -> None:
+    """A multi-line inline body folds to one line with the dup file:line removed."""
+    body = (
+        "[MAJOR] src/x.py:42 — ConnectionError 무음 처리.\n\n"
+        "```python\nexcept Exception:\n    pass\n```\n수정: 좁혀잡고 로깅."
+    )
+    out = _append_folded_bullets(
+        "개요.\n\n— hyejin-bot 🐱✨",
+        [InlineComment(path="src/x.py", line=42, side="RIGHT", body=body)],
+    )
+    # Anchor appears once (in the bold prefix), code fence dropped, first
+    # sentence kept with its severity label.
+    assert "> **`src/x.py:42`** — [MAJOR] ConnectionError 무음 처리." in out
+    assert "```" not in out
+    assert "수정:" not in out  # only first line folded
 
 
 # ── inline_to_api ─────────────────────────────────────────────────────────

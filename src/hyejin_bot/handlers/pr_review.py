@@ -905,9 +905,50 @@ def _insert_above_signoff(summary: str, block: str) -> str:
 
 
 def _append_folded_bullets(summary: str, folded: list[InlineComment]) -> str:
-    """Fold out-of-hunk inline comments into Summary bullets above the sign-off."""
-    bullets = "\n".join(f"- [{c.path} near L{c.line}] {c.body}" for c in folded)
-    return _insert_above_signoff(summary, bullets)
+    """Fold out-of-hunk inline comments into Summary bullets above the sign-off.
+
+    Out-of-hunk comments can't be posted as GitHub inline anchors, so they
+    have to ride in the body. But an inline body is multi-line (evidence +
+    code fence + fix) — dumping it verbatim turns the otherwise-scannable
+    summary into a wall of text and duplicates the `file:line` anchor. We
+    fold each one to a single readable line:
+
+        > **`path:line`** — first sentence of the finding.
+
+    Only the first line of the inline body is kept, and a redundant leading
+    `[SEV] file:line —` prefix (the inline-format convention) is stripped so
+    the anchor isn't printed twice. The full evidence/fix still lives in the
+    inline comment payload — these bullets are a pointer, not a copy.
+    """
+    if not folded:
+        return summary
+    lines = [
+        f"> **`{c.path}:{c.line}`** — {_fold_one_line(c.body, path=c.path, line=c.line)}"
+        for c in folded
+    ]
+    note = (
+        "**Out-of-diff notes** _(couldn't anchor inline — context outside the changed hunks)_\n"
+        + "\n".join(lines)
+    )
+    return _insert_above_signoff(summary, note)
+
+
+def _fold_one_line(body: str, *, path: str, line: int) -> str:
+    """Reduce a multi-line inline body to one clean sentence for a fold bullet.
+
+    Keeps only the first non-empty line and strips the inline-format
+    `[SEVERITY] file:line —` lead-in so the anchor (already shown by the
+    caller) isn't repeated. Severity label is preserved when present.
+    """
+    first = next((ln.strip() for ln in body.splitlines() if ln.strip()), body.strip())
+    # Inline convention: "[MAJOR] path/to/file.py:42 — 한 문장." Strip the
+    # "path:line —" middle so we keep "[MAJOR] 한 문장." without the dup anchor.
+    anchor = f"{path}:{line}"
+    if anchor in first:
+        head, _, tail = first.partition(anchor)
+        rejoined = (head + tail.lstrip(" —-")).strip()
+        first = rejoined or first
+    return first
 
 
 def _enforce_redaction(summary: str, comments: list[InlineComment]) -> None:

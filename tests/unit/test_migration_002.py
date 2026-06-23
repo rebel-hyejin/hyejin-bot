@@ -8,7 +8,7 @@ import pytest
 
 from hyejin_bot.infra.storage import apply_migrations, open_db
 
-_LATEST_SCHEMA_VERSION = 6
+_LATEST_SCHEMA_VERSION = 7
 
 
 @pytest.mark.asyncio
@@ -16,7 +16,8 @@ async def test_migration_002_brings_schema_to_version_2(tmp_path: Path) -> None:
     """After apply_migrations, schema_version is current and both 002 tables exist.
 
     Named for migration 002 historically; now asserts the running tip
-    (currently 5 — adds jira_assigned_state + jira_triage_audit, see 005).
+    (currently 7 — `cron_state`, see migration 007). Bump
+    `_LATEST_SCHEMA_VERSION` whenever a new migration lands.
     """
     db_path = tmp_path / "state.db"
     conn = await open_db(db_path)

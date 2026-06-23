@@ -744,7 +744,8 @@ async def test_out_of_hunk_anchor_folded_into_summary(tmp_path: Path) -> None:
         assert len(posted[0]["comments"]) == 1
         assert posted[0]["comments"][0]["line"] == 6
         assert "out-of-hunk feedback" in posted[0]["body"]
-        assert "near L99" in posted[0]["body"]
+        assert "**`" in posted[0]["body"]  # folded as a `path:line` bullet
+        assert ":99`**" in posted[0]["body"]
     finally:
         await conn.close()
 

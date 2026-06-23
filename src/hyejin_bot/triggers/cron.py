@@ -22,7 +22,9 @@ Catch-up semantics:
     A daemon that boots after the scheduled time but on a day it hasn't yet
     fired will fire immediately (the date check passes and `now >= HH:MM`).
     A daemon down across the whole window simply misses that day — there is
-    no backfill (a stale news clip helps no one). Missing a day is logged.
+    no backfill (a stale news clip helps no one), and no miss is logged: the
+    trigger is stateless about days it never observed, so "missed" isn't a
+    distinguishable event. The next day fires normally.
 
 Errors:
     AuthError      → re-raise (halts the daemon, exit 78) — defensive; this

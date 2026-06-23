@@ -71,18 +71,34 @@ def _render_geeknews_block(index: int, item: NewsItem) -> str:
 
 
 def _pack(header: str, blocks: list[str]) -> list[str]:
-    """Greedily pack header + blocks into <=_SLACK_TEXT_LIMIT messages."""
+    """Greedily pack header + blocks into <=_SLACK_TEXT_LIMIT messages.
+
+    Every emitted message starts with the header (with a `(N/N)`-style
+    continuation hint added by the caller is unnecessary — the header repeats
+    so each chunk has context). A message is only flushed once it carries at
+    least one block, so we never ship a header-only message: when the very
+    first block won't fit beside the header, the block becomes the start of a
+    fresh `header + block` message rather than orphaning the header.
+    """
     messages: list[str] = []
     current = header
+    has_block = False
     for block in blocks:
         candidate = f"{current}\n\n{_DIVIDER}\n\n{block}"
         if len(candidate) <= _SLACK_TEXT_LIMIT:
             current = candidate
+            has_block = True
             continue
-        messages.append(current)
-        # Start a fresh message. A single block over the limit is rare; ship it
-        # on its own (Slack will truncate it, but it stays the only casualty).
-        current = block
+        # Current message is full. Flush it only if it already holds a block;
+        # otherwise it's header-only — keep building on it so the header isn't
+        # shipped alone.
+        if has_block:
+            messages.append(current)
+        # Start the next message with the header again so every chunk has
+        # context. A single block that overflows even `header + block` is rare;
+        # ship it on its own (Slack truncates it, but it stays the only casualty).
+        current = f"{header}\n\n{_DIVIDER}\n\n{block}"
+        has_block = True
     messages.append(current)
     return messages
 

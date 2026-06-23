@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -179,12 +179,22 @@ def _rss_text(item: ET.Element, tag: str) -> str | None:
 
 
 def _parse_rss_date(value: str | None) -> datetime | None:
+    """Parse an RFC 822 `pubDate`, always returning a tz-aware datetime.
+
+    `parsedate_to_datetime` returns a *naive* datetime when the header omits a
+    timezone (some feeds do). Comparing a naive value against the tz-aware
+    `cutoff` raises `TypeError` and would break the whole GeekNews half, so we
+    assume UTC for naive results — close enough for a 24h recency window.
+    """
     if not value:
         return None
     try:
-        return parsedate_to_datetime(value)
+        parsed = parsedate_to_datetime(value)
     except (TypeError, ValueError):
         return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 @dataclass(slots=True)

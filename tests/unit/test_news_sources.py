@@ -82,3 +82,24 @@ def test_geeknews_rss_respects_limit() -> None:
 def test_geeknews_rss_malformed_returns_empty() -> None:
     now = datetime(2026, 6, 23, 6, 0, 0, tzinfo=UTC)
     assert _parse_geeknews_rss("<not xml", limit=10, now=now, window_hours=24) == []
+
+
+_RSS_NAIVE_DATE = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>tz 없는 글</title>
+    <link>https://news.hada.io/topic?id=9</link>
+    <pubDate>Tue, 23 Jun 2026 01:00:00</pubDate>
+  </item>
+</channel></rss>
+"""
+
+
+def test_geeknews_rss_naive_pubdate_does_not_raise() -> None:
+    # A pubDate without a timezone parses to a naive datetime; comparing it
+    # against the tz-aware cutoff must NOT raise (Copilot finding). We treat
+    # naive as UTC, so this item lands inside a 24h window.
+    now = datetime(2026, 6, 23, 6, 0, 0, tzinfo=UTC)
+    items = _parse_geeknews_rss(_RSS_NAIVE_DATE, limit=10, now=now, window_hours=24)
+    assert len(items) == 1
+    assert items[0].title == "tz 없는 글"

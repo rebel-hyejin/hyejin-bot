@@ -18,7 +18,7 @@ class HnSummary(BaseModel):
 
     url: str = Field(min_length=1)
     headline_ko: str = Field(min_length=1, max_length=120)
-    bullets_en: list[str] = Field(default_factory=list[str], max_length=3)
+    bullets_en: list[str] = Field(default_factory=list, max_length=3)
 
 
 class NewsSummaryOutput(BaseModel):
@@ -26,4 +26,4 @@ class NewsSummaryOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    summaries: list[HnSummary] = Field(default_factory=list[HnSummary])
+    summaries: list[HnSummary] = Field(default_factory=list)

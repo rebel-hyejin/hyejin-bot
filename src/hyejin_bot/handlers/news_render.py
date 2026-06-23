@@ -11,7 +11,7 @@ Format mirrors `~/.claude/skills/news/SKILL.md`:
     <url>
     ...
 
-Slack caps a single `chat.postMessage` `text` at ~4000 chars; `split_message`
+Slack caps a single `chat.postMessage` `text` at ~4000 chars; `_pack`
 chunks on item boundaries so a long clip ships as several messages instead of
 being silently truncated.
 """

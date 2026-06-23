@@ -9,8 +9,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import httpx
+import pytest
+
 from hyejin_bot.core.news.types import NewsItem, NewsSource
 from hyejin_bot.infra.news_sources import (
+    HttpNewsFetcher,
     _apply_hn_threshold,  # pyright: ignore[reportPrivateUsage]
     _parse_geeknews_rss,  # pyright: ignore[reportPrivateUsage]
 )
@@ -128,3 +132,34 @@ def test_geeknews_rss_rejects_oversized_body() -> None:
     now = datetime(2026, 6, 23, 6, 0, 0, tzinfo=UTC)
     huge = "<rss>" + ("x" * (5 * 1024 * 1024)) + "</rss>"
     assert _parse_geeknews_rss(huge, limit=10, now=now, window_hours=24) == []
+
+
+def _hn_transport() -> httpx.MockTransport:
+    """Mock the HN Firebase API: topstories list + per-item JSON."""
+    top = [101, 102, 103]
+    items = {
+        101: {"title": "First", "url": "https://ex.com/1", "score": 300},
+        102: {"title": "Second", "url": "https://ex.com/2", "score": 250},
+        # 103 is a self-post (no url) → dropped by the fetcher.
+        103: {"title": "Ask HN: foo", "score": 280},
+    }
+
+    def _handler(req: httpx.Request) -> httpx.Response:
+        path = req.url.path
+        if path.endswith("/topstories.json"):
+            return httpx.Response(200, json=top)
+        item_id = int(path.rsplit("/", 1)[-1].removesuffix(".json"))
+        return httpx.Response(200, json=items[item_id])
+
+    return httpx.MockTransport(_handler)
+
+
+@pytest.mark.asyncio
+async def test_http_fetch_hacker_news_concurrent_preserves_order_and_filters() -> None:
+    # Real fetcher over a mocked transport: concurrent item fetch (asyncio.gather)
+    # preserves topstories order and drops the self-post with no url.
+    async with httpx.AsyncClient(transport=_hn_transport()) as client:
+        fetcher = HttpNewsFetcher(http_client=client)
+        items = await fetcher.fetch_hacker_news(limit=6)
+    assert [it.title for it in items] == ["First", "Second"]
+    assert all(it.source is NewsSource.HACKER_NEWS for it in items)

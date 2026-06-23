@@ -110,11 +110,13 @@ CI/CD pipeline · GitHub Actions · build/test orchestration. **DevOps 시점에
 | `[P12]` | Missing strict shell flags | MAJOR | CI/runner script가 `set -euo pipefail` 없이 실행. 중간 실패가 silent하게 다음 step으로 흘러감. |
 | `[P13]` | GHA matrix fail-fast misuse | MAJOR | `fail-fast: true` (default) on regression matrix → 한 NPU device 실패가 전 fleet job 취소. 반대로 release-blocking pipeline에 `fail-fast: false`로 두면 첫 실패 신호 묻힘. context에 맞게 명시. |
 | `[P14]` | `needs:` graph incorrectness | MAJOR | downstream job의 `needs:` 누락 / 잘못된 의존 → upstream 실패에도 downstream 실행, 또는 race로 stale artifact 사용. |
+| `[P15]` | Serial await over N independent I/O calls | MAJOR | 서로 독립인 N개의 외부 호출(HTTP/SSH/DB)을 `for ... await` 루프로 순차 실행. per-call timeout이 T면 worst-case wall-clock이 N×T로 늘어 — daily 배치/핸들러가 부분 outage에 분 단위로 묶인다. 독립 호출은 bounded concurrency(`asyncio.Semaphore` + `gather`, 보통 10–20 in-flight)로 병렬화하고 실패는 개별 필터. 순서가 필요하면 `gather`가 입력 순서를 보존. |
 
 **Pet peeve**:
 - `<code>\|\| true</code>` 가 보이면 무조건 일단 CRITICAL 후보. 정당한 사유(known-flaky를 임시 격리 등) 없으면 머지 금지.
 - timeout 없는 job은 daily regression이 목요일 새벽 3시에 멈춰도 누가 모름 → `[P2]` MAJOR.
 - `set -euo pipefail` 빠진 bash step은 중간 실패가 묻힌다 → `[P12]`. multi-command step일수록 가시성 손실 큼.
+- `[P15]` — `for id in ids: await fetch(id)` 패턴. 50개면 한 개만 느려도 전체가 직렬화된다. unbounded `gather`는 외부 API를 때리므로 semaphore로 in-flight 상한.
 
 ---
 

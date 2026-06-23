@@ -21,6 +21,7 @@ a `FakeNewsFetcher` with scripted items instead of hitting the network.
 
 from __future__ import annotations
 
+import asyncio
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -42,6 +43,9 @@ _GEEKNEWS_RSS = "https://feeds.feedburner.com/geeknews-feed"
 _HN_SCORE_THRESHOLDS: tuple[int, ...] = (200, 150, 100)
 # How many of the top-ranked HN stories to inspect per run.
 _HN_TOP_SCAN = 50
+# Max concurrent HN item fetches. Bounds in-flight load on the public Firebase
+# API while keeping a 50-item run close to one timeout window, not 50x it.
+_HN_FETCH_CONCURRENCY = 15
 # Hard cap on the GeekNews RSS body we'll parse. The feed is ~tens of KB; a
 # response materially larger than this is either a feed change or a hostile
 # payload (billion-laughs / deeply-nested XML resource exhaustion). Stdlib
@@ -80,13 +84,19 @@ class HttpNewsFetcher:
             if not isinstance(ids, list):
                 return []
             id_list = cast("list[Any]", ids)
-            items: list[NewsItem] = []
-            for raw_id in id_list[:_HN_TOP_SCAN]:
-                if not isinstance(raw_id, int):
-                    continue
-                item = await self._fetch_hn_item(client, raw_id)
-                if item is not None:
-                    items.append(item)
+            int_ids = [i for i in id_list[:_HN_TOP_SCAN] if isinstance(i, int)]
+            # Fetch item JSON concurrently with a bounded in-flight cap so a few
+            # slow/timing-out items don't serialize the whole run. Sequential
+            # await-in-loop was worst-case ~50x timeout (minutes); bounded
+            # concurrency keeps it close to one timeout window.
+            sem = asyncio.Semaphore(_HN_FETCH_CONCURRENCY)
+
+            async def _guarded(item_id: int) -> NewsItem | None:
+                async with sem:
+                    return await self._fetch_hn_item(client, item_id)
+
+            fetched = await asyncio.gather(*(_guarded(i) for i in int_ids))
+            items = [it for it in fetched if it is not None]
             return _apply_hn_threshold(items, limit=limit)
         finally:
             if owns:

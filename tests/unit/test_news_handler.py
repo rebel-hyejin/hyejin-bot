@@ -97,7 +97,9 @@ async def test_full_clip_fetched_summarized_and_dmd() -> None:
     assert len(slack.calls) == 1
     text = slack.calls[0]["text"]
     assert slack.calls[0]["channel"] == "D08GP012483"
-    assert "2026-06-23 뉴스 클립" in text
+    # Date is the handler's clock "today" — assert the date-agnostic header so
+    # the test doesn't rot when the calendar rolls over.
+    assert "뉴스 클립" in text
     assert "Rust 2.0" in text
     assert "러스트가 빌드 파이프라인에 주는 영향" in text
     assert "• Faster builds" in text

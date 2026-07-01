@@ -412,6 +412,41 @@ async def test_skipped_withdrawn_when_pr_closed(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_force_does_not_review_merged_pr(tmp_path: Path) -> None:
+    """Efficiency (Claude-quota): a `force=true` auto re-request (gen>1) on a
+    MERGED/closed PR must NOT call Claude — GitHub rejects comments on it, so
+    the review is wasted tokens. force means 'review again', not 'review a
+    closed PR'. Regression guard for the 5h-quota burn on a merged backlog.
+    """
+    fake_gh = FakeGh()
+    fake_gh.add_pr(
+        "o/r",
+        7,
+        head_sha="deadbeef",
+        author="alice",
+        files=_FILES_ONE_FILE,
+        state="closed",
+    )
+    # A FakeClaudeSession that would raise if queried — proves Claude is NOT called.
+    factory = FakeFactory(
+        session=FakeClaudeSession(default='{"verdict":"APPROVE","summary":"x","comments":[]}')
+    )
+    handler, conn, _ = await _build_handler(tmp_path, fake_gh=fake_gh, factory=factory)
+    try:
+        event = _auto_event(force=True)  # gen=2, force=true
+        await _seed_event_row(conn, event)
+        result = await handler.handle(event, _ctx(factory))
+        assert isinstance(result, Ack)
+        assert fake_gh.posted_reviews() == []  # no review posted
+        assert factory.session.calls == []  # Claude never queried
+        latest = await find_latest(conn, "o/r", 7, "deadbeef")
+        assert latest is not None
+        assert latest.status == "skipped_withdrawn"
+    finally:
+        await conn.close()
+
+
+@pytest.mark.asyncio
 async def test_skipped_when_username_not_in_requested(tmp_path: Path) -> None:
     fake_gh = FakeGh()
     fake_gh.add_pr(

@@ -329,17 +329,41 @@ class PrReviewHandler:
                 head_sha=prep.head_sha,
             )
             return Ack()
+        # A closed/merged PR is a hard skip — GitHub rejects review comments on
+        # it, so any Claude call is wasted tokens. This check runs BEFORE the
+        # force/manual short-circuit on purpose: `force` (a re-request, gen>1)
+        # and `is_manual` mean "review again", NOT "review a closed PR". A
+        # backlog of merged PRs re-requested at gen>1 was burning the 5h Claude
+        # quota on reviews GitHub would reject. (Reviewer-membership withdrawal
+        # below is separate — force/manual MAY bypass that.)
+        if prep.pr_state != "open":
+            await self._write_audit(
+                **prep.audit_kwargs,
+                status="skipped_withdrawn",
+                error=f"state={prep.pr_state!r} (closed/merged — no Claude call)",
+                created_at=now,
+            )
+            _log.info(
+                "pr_review.skipped_withdrawn",
+                repo=prep.repo,
+                pr_number=prep.pr_number,
+                head_sha=prep.head_sha,
+                state=prep.pr_state,
+                reason="pr_closed",
+            )
+            return Ack()
         # Manual fires and force re-runs honor the request even when the
         # operator is not (or no longer) a requested reviewer; auto runs
-        # always require current membership.
+        # always require current membership. (PR-closed already handled above.)
         if prep.force or prep.is_manual:
             return None
         # Own PRs are never in their own requested-reviewers set, so the
-        # reviewer-membership test can't apply — only PR closure withdraws them.
+        # reviewer-membership test can't apply — the PR-open check above is the
+        # only withdrawal that affects them.
         if is_self:
-            withdrawn = prep.pr_state != "open"
+            withdrawn = False
         else:
-            withdrawn = prep.pr_state != "open" or self.github_username not in prep.requested_logins
+            withdrawn = self.github_username not in prep.requested_logins
         if not withdrawn:
             return None
         await self._write_audit(
@@ -354,6 +378,7 @@ class PrReviewHandler:
             pr_number=prep.pr_number,
             head_sha=prep.head_sha,
             state=prep.pr_state,
+            reason="reviewer_withdrawn",
         )
         return Ack()
 

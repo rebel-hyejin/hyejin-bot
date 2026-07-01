@@ -64,9 +64,19 @@ E. **Daily regression 영향 추적** — 변경된 path가 daily/weekly tier에
 
 - **Co-Authored-By trailer 금지** — rebellions-sw 레포는 checkpatch warning을 유발하므로 commit message에 `Co-Authored-By:` 트레일러 포함 금지. PR에 들어 있으면 `[D20]` MAJOR.
 - **Sign-off (`Signed-off-by:`) 필수** — `git commit -s` 항상. 누락은 `[D21]` MAJOR.
-- **Convention 문서 선행 확인** — `inv/`, `.github/workflows/`, `test/system/` 변경 시 해당 `docs/conventions/*.md`를 원본 그대로 직접 참조했는지 확인. 에이전트 요약을 인용한 흔적이 있으면 `[D22]` MAJOR. 기존 코드의 위반을 그대로 옮긴 것은 컨벤션에 맞게 수정할 기회로 — 그렇게 안 했으면 동일하게 `[D22]`.
+- **Convention 문서 선행 확인** — 변경된 경로별 ssw-bundle convention 원문을 직접 Read. 요약/암기 인용이면 `[D22]` MAJOR. 기존 코드의 위반을 그대로 옮긴 것도 동일하게 `[D22]`.
+
+  | 변경 경로 | 읽어야 하는 컨벤션 | 핵심 검사 |
+  |---|---|---|
+  | `inv/**/*.py` | `docs/conventions/invoke.md` | §1 Execution Model (`echo=True` 기본), §3 모듈 길이, §5 단위 테스트, §7 secret stdin pipe |
+  | `.github/workflows/**`, **`.github/actions/**`**, `.github/composite/**` | `docs/conventions/workflow.md` + 관련 ADR (예: ADR-0005) | **§4 File Naming — 신규 파일은 `.yaml` (신규 `.yml` 금지)**, reusable workflow @ref 정책, secrets scope |
+  | `test/system/**/*.robot`, `lib/*.py` keyword library | `docs/conventions/robot.md`, `tags.md` | tag 순서, Then PASS-only, [Documentation] SSID 매핑 |
+  | `packaging/driver-container/**` | `docs/conventions/driver-container.md` (있다면) | `set -euo pipefail` 활성 가정 시 trigger 라인 인용 |
+  | `docs/spec/**` | 해당 product의 SRS 컨벤션 | SSID prefix, TC link placeholder, 검증 섹션 |
 - **PR base 명시** — default branch가 `dev`인 레포에서 release line(`release/v3.3` 등) 타겟 PR은 `gh pr create --base release/x.x` 명시 필수. base/head 불일치 PR은 `[D23]` CRITICAL.
 - **Release backport 의존 헬퍼 검증** — `dev → release/v3.x` cherry-pick 충돌 후 의존 헬퍼를 함께 backport한 경우, 그 헬퍼가 **target deploy host에서 실제로 필요한지** 실측한 증거가 **PR description · commit 메시지 · 또는 PR 코멘트 thread** 어디든 있어야 한다. 없으면 `[D24]` MAJOR. 우회 가능한데 명목상 backport한 케이스는 같은 등급.
+- **PR 내부 양방향 대칭 (`[D26]`)** — 같은 PR에서 추가된 짝(reserve/unreserve · add/remove · on/off · install/uninstall · setup/teardown · enable/disable · acquire/release · lock/unlock)의 인자·옵션·로깅·에러 핸들링이 비대칭이면 MAJOR. 예: reserve에 `echo=True`인데 unreserve는 누락, install은 `continue-on-error: true`인데 uninstall은 hard fail, lock은 timeout 있는데 unlock은 없음. **검사 방법**: PR diff에서 동사쌍을 grep으로 묶고, 한쪽 hunk에 있는 keyword가 반대쪽 hunk에도 있는지 line-by-line 대조. drift는 의도적 비대칭(주석으로 명시)이 없으면 finding.
+- **코드 내 티켓 참조 (`[G51]`)** — 소스/YAML/스크립트 주석에 `DOLIN-NNNN` / `SSWCI-NNNNN` / `JIRA-XXX` 같은 작업 컨텍스트 티켓 ID가 있으면 MINOR. 이런 메타데이터는 PR description / commit message에 들어가야 하며, 코드 주석에 박히면 코드베이스 진화 시 stale 정보로 썩는다. 예외: 워크어라운드의 **upstream bug tracker**(예: `# upstream issue python/cpython#NNNN`)나 ADR 본문 인용(`# see ADR-0005 §D6`)은 영구성이 있어 허용. 도메인 배경 설명(`# square CLI for the rsys→square reservation migration`)은 티켓 ID만 떼고 유지.
 
 ## Robot Framework / test 규칙
 
@@ -190,6 +200,8 @@ E. **Daily regression 영향 추적** — 변경된 path가 daily/weekly tier에
 | `[D22]` | Drift / convention | 컨벤션 원본 문서 미참조 (에이전트 요약만 인용), 기존 코드의 위반을 그대로 복사 | MAJOR |
 | `[D23]` | Drift / PR meta | release line PR의 `--base` 누락 (default branch가 dev라 자동 dev로 설정됨) | CRITICAL |
 | `[D24]` | Drift / backport | 의존 헬퍼 backport 시 target deploy host 실측 증거 부재 | MAJOR |
+| `[D26]` | Drift / PR 내부 비대칭 | 같은 PR의 짝 동사(reserve/unreserve, install/uninstall 등) 옵션·로깅·에러 핸들링이 비대칭 | MAJOR |
+| `[G51]` | Comment policy | 코드/YAML 주석에 작업 컨텍스트 티켓 참조 (DOLIN-/SSWCI-/JIRA-) — 코드베이스 진화 시 stale | MINOR |
 | `[T20]` | Test determinism / RF | Robot Then 절에서 SKIP을 builtin.skip()으로 pass 처리 | MAJOR |
 | `[T21]` | Test determinism / RF | SKIP→FAIL 정책 변경 시 단위 테스트 미갱신 (test_skip_when_* → test_fail_when_*) | MINOR |
 | `[T22]` | Test determinism | unit test의 time.sleep mock 누락 (CI 시간 budget 직격) | MAJOR |
